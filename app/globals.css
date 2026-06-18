@@ -1,0 +1,496 @@
+@import "tailwindcss";
+
+/* ── Material 3 system color roles (default seed #6d28d9). ──
+   Runtime theming (ThemeForge) overrides these --md-sys-color-* vars on :root.
+   Every component reads color via these tokens — no hardcoded hex. */
+:root {
+  /* light */
+  --md-sys-color-primary: #7331df;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #ebddff;
+  --md-sys-color-on-primary-container: #250059;
+  --md-sys-color-secondary: #635b70;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #e9def8;
+  --md-sys-color-on-secondary-container: #1f182b;
+  --md-sys-color-tertiary: #7e525e;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #ffd9e1;
+  --md-sys-color-on-tertiary-container: #31101b;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #410002;
+  --md-sys-color-background: #fffbff;
+  --md-sys-color-on-background: #1d1b1e;
+  --md-sys-color-surface: #fffbff;
+  --md-sys-color-on-surface: #1d1b1e;
+  --md-sys-color-surface-variant: #e7e0eb;
+  --md-sys-color-on-surface-variant: #49454e;
+  --md-sys-color-surface-container: #f3edf5;
+  /* tonal elevation surfaces (M3): dark mode lifts by tone, not shadow */
+  --md-sys-color-surface-container-low: #f7f2fa;
+  --md-sys-color-surface-container-high: #ece6ef;
+  --md-sys-color-surface-container-highest: #e6e0e9;
+  --md-sys-color-outline: #7a757f;
+  --md-sys-color-outline-variant: #cbc4cf;
+  --md-sys-color-inverse-surface: #323033;
+  --md-sys-color-inverse-on-surface: #f5eff4;
+  --md-sys-color-inverse-primary: #d3bbff;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+
+  /* ── Motion design tokens (durations + easings). Theme-invariant. ── */
+  --gb-dur-fast: 120ms;
+  --gb-dur-base: 180ms;
+  --gb-dur-slow: 280ms;
+  --gb-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --gb-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Elevation scale (layered shadow + hairline). Tuned for light surfaces. ── */
+  --gb-elev-1: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 1px rgb(0 0 0 / 0.04);
+  --gb-elev-2: 0 2px 6px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.05);
+  --gb-elev-3: 0 6px 16px rgb(0 0 0 / 0.1), 0 2px 4px rgb(0 0 0 / 0.06);
+  --gb-elev-4: 0 12px 28px rgb(0 0 0 / 0.14), 0 4px 8px rgb(0 0 0 / 0.08);
+
+  /* ── Radius scale ── */
+  --gb-radius-control: 0.5rem;
+  --gb-radius-panel: 0.75rem;
+  --gb-radius-modal: 1rem;
+}
+
+/* dark applied explicitly (variant toggle) ... */
+:root[data-theme-variant="dark"] {
+  --md-sys-color-primary: #d3bbff;
+  --md-sys-color-on-primary: #3f008d;
+  --md-sys-color-primary-container: #5b00c5;
+  --md-sys-color-on-primary-container: #ebddff;
+  --md-sys-color-secondary: #cdc2db;
+  --md-sys-color-on-secondary: #342d40;
+  --md-sys-color-secondary-container: #4b4358;
+  --md-sys-color-on-secondary-container: #e9def8;
+  --md-sys-color-tertiary: #f0b7c5;
+  --md-sys-color-on-tertiary: #4a2530;
+  --md-sys-color-tertiary-container: #643b46;
+  --md-sys-color-on-tertiary-container: #ffd9e1;
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffb4ab;
+  --md-sys-color-background: #1d1b1e;
+  --md-sys-color-on-background: #e6e1e6;
+  --md-sys-color-surface: #1d1b1e;
+  --md-sys-color-on-surface: #e6e1e6;
+  --md-sys-color-surface-variant: #49454e;
+  --md-sys-color-on-surface-variant: #cbc4cf;
+  --md-sys-color-surface-container: #2b292f;
+  --md-sys-color-surface-container-low: #211f24;
+  --md-sys-color-surface-container-high: #36343a;
+  --md-sys-color-surface-container-highest: #413f45;
+  --md-sys-color-outline: #948f99;
+  --md-sys-color-outline-variant: #49454e;
+  --md-sys-color-inverse-surface: #e6e1e6;
+  --md-sys-color-inverse-on-surface: #323033;
+  --md-sys-color-inverse-primary: #7331df;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  /* deeper shadows read better over dark surfaces */
+  --gb-elev-1: 0 1px 2px rgb(0 0 0 / 0.3);
+  --gb-elev-2: 0 2px 6px rgb(0 0 0 / 0.38), 0 1px 2px rgb(0 0 0 / 0.3);
+  --gb-elev-3: 0 6px 16px rgb(0 0 0 / 0.45), 0 2px 4px rgb(0 0 0 / 0.32);
+  --gb-elev-4: 0 12px 28px rgb(0 0 0 / 0.5), 0 4px 8px rgb(0 0 0 / 0.36);
+}
+
+/* ... or by system preference when the user hasn't forced light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme-variant="light"]) {
+    --md-sys-color-primary: #d3bbff;
+    --md-sys-color-on-primary: #3f008d;
+    --md-sys-color-primary-container: #5b00c5;
+    --md-sys-color-on-primary-container: #ebddff;
+    --md-sys-color-secondary: #cdc2db;
+    --md-sys-color-on-secondary: #342d40;
+    --md-sys-color-secondary-container: #4b4358;
+    --md-sys-color-on-secondary-container: #e9def8;
+    --md-sys-color-tertiary: #f0b7c5;
+    --md-sys-color-on-tertiary: #4a2530;
+    --md-sys-color-tertiary-container: #643b46;
+    --md-sys-color-on-tertiary-container: #ffd9e1;
+    --md-sys-color-error: #ffb4ab;
+    --md-sys-color-on-error: #690005;
+    --md-sys-color-error-container: #93000a;
+    --md-sys-color-on-error-container: #ffb4ab;
+    --md-sys-color-background: #1d1b1e;
+    --md-sys-color-on-background: #e6e1e6;
+    --md-sys-color-surface: #1d1b1e;
+    --md-sys-color-on-surface: #e6e1e6;
+    --md-sys-color-surface-variant: #49454e;
+    --md-sys-color-on-surface-variant: #cbc4cf;
+    --md-sys-color-surface-container: #2b292f;
+    --md-sys-color-surface-container-low: #211f24;
+    --md-sys-color-surface-container-high: #36343a;
+    --md-sys-color-surface-container-highest: #413f45;
+    --md-sys-color-outline: #948f99;
+    --md-sys-color-outline-variant: #49454e;
+    --md-sys-color-inverse-surface: #e6e1e6;
+    --md-sys-color-inverse-on-surface: #323033;
+    --md-sys-color-inverse-primary: #7331df;
+    --gb-elev-1: 0 1px 2px rgb(0 0 0 / 0.3);
+    --gb-elev-2: 0 2px 6px rgb(0 0 0 / 0.38), 0 1px 2px rgb(0 0 0 / 0.3);
+    --gb-elev-3: 0 6px 16px rgb(0 0 0 / 0.45), 0 2px 4px rgb(0 0 0 / 0.32);
+    --gb-elev-4: 0 12px 28px rgb(0 0 0 / 0.5), 0 4px 8px rgb(0 0 0 / 0.36);
+  }
+}
+
+/* Map M3 roles to Tailwind color tokens: bg-primary, text-on-surface, border-outline-variant... */
+@theme inline {
+  --color-primary: var(--md-sys-color-primary);
+  --color-on-primary: var(--md-sys-color-on-primary);
+  --color-primary-container: var(--md-sys-color-primary-container);
+  --color-on-primary-container: var(--md-sys-color-on-primary-container);
+  --color-secondary: var(--md-sys-color-secondary);
+  --color-on-secondary: var(--md-sys-color-on-secondary);
+  --color-secondary-container: var(--md-sys-color-secondary-container);
+  --color-on-secondary-container: var(--md-sys-color-on-secondary-container);
+  --color-tertiary: var(--md-sys-color-tertiary);
+  --color-tertiary-container: var(--md-sys-color-tertiary-container);
+  --color-error: var(--md-sys-color-error);
+  --color-on-error: var(--md-sys-color-on-error);
+  --color-error-container: var(--md-sys-color-error-container);
+  --color-on-error-container: var(--md-sys-color-on-error-container);
+  --color-background: var(--md-sys-color-background);
+  --color-on-background: var(--md-sys-color-on-background);
+  --color-surface: var(--md-sys-color-surface);
+  --color-on-surface: var(--md-sys-color-on-surface);
+  --color-surface-variant: var(--md-sys-color-surface-variant);
+  --color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+  --color-surface-container: var(--md-sys-color-surface-container);
+  --color-surface-container-low: var(--md-sys-color-surface-container-low);
+  --color-surface-container-high: var(--md-sys-color-surface-container-high);
+  --color-surface-container-highest: var(--md-sys-color-surface-container-highest);
+  --color-outline: var(--md-sys-color-outline);
+  --color-outline-variant: var(--md-sys-color-outline-variant);
+  --color-inverse-surface: var(--md-sys-color-inverse-surface);
+  --color-tertiary-container: var(--md-sys-color-tertiary-container);
+  --color-on-tertiary-container: var(--md-sys-color-on-tertiary-container);
+  --color-on-tertiary: var(--md-sys-color-on-tertiary);
+  --color-secondary: var(--md-sys-color-secondary);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  /* expose elevation + radius + motion as Tailwind utilities (shadow-elev-2, rounded-panel, ...) */
+  --shadow-elev-1: var(--gb-elev-1);
+  --shadow-elev-2: var(--gb-elev-2);
+  --shadow-elev-3: var(--gb-elev-3);
+  --shadow-elev-4: var(--gb-elev-4);
+  --radius-control: var(--gb-radius-control);
+  --radius-panel: var(--gb-radius-panel);
+  --radius-modal: var(--gb-radius-modal);
+  --ease-out: var(--gb-ease-out);
+  --ease-spring: var(--gb-ease-spring);
+}
+
+/* ── Global focus ring (WCAG 2.4.7). Visible only for keyboard nav. ── */
+:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Mount/enter animations (panels, menus, nodes). Transform+opacity only. ── */
+@keyframes gb-pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes gb-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes gb-node-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes gb-shimmer {
+  to { background-position: 200% 0; }
+}
+.gb-pop-in { animation: gb-pop-in var(--gb-dur-base) var(--gb-ease-out); }
+.gb-fade-in { animation: gb-fade-in var(--gb-dur-base) var(--gb-ease-out); }
+.gb-node-in { animation: gb-node-in var(--gb-dur-base) var(--gb-ease-spring); }
+
+/* Shimmer skeleton (loading states). */
+.gb-skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--md-sys-color-surface-container) 30%,
+    var(--md-sys-color-surface-container-high) 50%,
+    var(--md-sys-color-surface-container) 70%
+  );
+  background-size: 200% 100%;
+  animation: gb-shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb-pop-in, .gb-fade-in, .gb-node-in, .gb-skeleton {
+    animation: none;
+  }
+}
+
+body {
+  background: var(--md-sys-color-background);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Flowing connector animation (the "dynamic line"). gb-flow = marching dashes (public read-only
+   view); gb-comet-* = the editor's directional comet (a glowing head with a fading tail that
+   travels along the path). pathLength is normalized to 100 so one pulse spans any edge length. */
+.react-flow__edge-path.gb-flow {
+  animation: gb-flow-dash 0.6s linear infinite;
+}
+@keyframes gb-flow-dash {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+.gb-comet-tail,
+.gb-comet-head {
+  pointer-events: none;
+  animation: gb-comet-travel 2s linear infinite;
+}
+.gb-comet-tail {
+  stroke-dasharray: 24 76; /* the comet body: a 24%-long dim segment */
+  opacity: 0.4;
+}
+.gb-comet-head {
+  /* bright pulse pinned to the LEADING 7% of the comet body (positions 17–24), so the dim tail
+     trails BEHIND the glow rather than ahead of it: [on 0][gap 17][on 7][gap 76] */
+  stroke-dasharray: 0 17 7 76;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+@keyframes gb-comet-travel {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+/* Guest proposal layer on the public board: dashed/tinted so additions read as "proposed, pending
+   the owner's review" rather than part of the live board. */
+.react-flow__node.gb-proposed {
+  outline: 2px dashed var(--md-sys-color-primary);
+  outline-offset: 3px;
+  border-radius: var(--gb-radius-panel);
+}
+.react-flow__edge.gb-proposed .react-flow__edge-path {
+  stroke-dasharray: 7 5;
+}
+
+/* gb-suggested = a public suggestion shown as a hazy, BLURRED ghost (it's not adopted yet). It clarifies
+   only when read/reviewed: on hover (anyone) or when the moderator's Accept/Discard popover is open
+   (gb-revealed, editor). */
+.react-flow__node.gb-suggested {
+  opacity: 0.6;
+  filter: saturate(0.5) blur(2.5px);
+  outline: 2px dashed var(--md-sys-color-tertiary);
+  outline-offset: 3px;
+  border-radius: var(--gb-radius-panel);
+  transition: opacity 0.4s ease, filter 0.4s ease; /* quick re-blur when you stop hovering */
+  cursor: pointer;
+}
+/* Swatches are just colors — they can't carry NSFW content — so DON'T blur them (the whole point is to
+   see the colour). They stay legible; only the dashed outline marks them as a pending suggestion. */
+.react-flow__node-swatch.gb-suggested {
+  opacity: 0.85;
+  filter: saturate(0.9);
+}
+/* De-blur only on a SUSTAINED hover: text/link content focuses in GRADUALLY over ~3s, so a mod/admin
+   must deliberately hold on a ghost to vet it. A casual mouse-over (or a streamer's cursor passing by)
+   barely reveals anything and it snaps back when the cursor leaves. The gradual focus is also the cue
+   that the reveal is in progress. gb-revealed keeps it clear while the Accept/Discard popover is open. */
+.react-flow__node.gb-suggested:hover {
+  opacity: 1;
+  filter: saturate(1) blur(0); /* identity (same fn order as base) so the blur can interpolate smoothly */
+  transition: filter 3s linear, opacity 0.4s ease;
+}
+.react-flow__node-swatch.gb-suggested:hover {
+  transition: filter 0.3s ease, opacity 0.3s ease; /* swatches aren't gated — reveal right away */
+}
+.react-flow__node.gb-suggested.gb-revealed {
+  opacity: 1;
+  filter: saturate(1) blur(0);
+}
+.react-flow__edge.gb-suggested .react-flow__edge-path {
+  stroke: var(--md-sys-color-tertiary);
+  stroke-dasharray: 6 6;
+  opacity: 0.4;
+}
+
+/* Discord-style spoiler: text blacked out until you hover/tap to reveal (in rendered content). */
+.gb-spoiler {
+  background: var(--md-sys-color-on-surface);
+  color: transparent;
+  border-radius: 0.25rem;
+  padding: 0 0.15em;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.gb-spoiler:hover,
+.gb-spoiler:focus,
+.gb-spoiler:active {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  color: inherit;
+}
+/* Tracked variable: a $name(value) token rendered as its value. Reads as "tracked", not plain text —
+   subtle dotted underline + the primary accent color, using the Material design tokens. */
+.gb-var {
+  color: var(--md-sys-color-primary);
+  border-bottom: 1px dotted color-mix(in srgb, var(--md-sys-color-primary) 60%, transparent);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+/* Inside the WYSIWYG editor a spoiler must stay legible (you're editing it) — show it with a marker. */
+.gb-wysiwyg .gb-spoiler {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 14%, transparent);
+  color: inherit;
+}
+.gb-wysiwyg {
+  min-height: 1.4rem;
+  cursor: text;
+}
+.gb-wysiwyg :first-child {
+  margin-top: 0;
+}
+
+/* gb-suggested-open = a pending suggestion shown CLEARLY (no blur) to public viewers. The blur gate is
+   only for the owner/moderator board; on the shared board everyone reads suggestions plainly. The
+   dashed outline still marks them as "proposed, not yet adopted". */
+.react-flow__node.gb-suggested-open {
+  outline: 2px dashed var(--md-sys-color-tertiary);
+  outline-offset: 3px;
+  border-radius: var(--gb-radius-panel);
+  opacity: 0.94;
+}
+.react-flow__edge.gb-suggested-open .react-flow__edge-path {
+  stroke: var(--md-sys-color-tertiary);
+  stroke-dasharray: 6 6;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge-path.gb-flow,
+  .gb-comet-tail,
+  .gb-comet-head {
+    animation: none;
+  }
+  .react-flow__node.gb-suggested {
+    transition: none;
+  }
+  /* with motion off, show the head as a static dim dashed line so the connector is still visible */
+  .gb-comet-tail {
+    opacity: 0.7;
+  }
+  .gb-comet-head {
+    opacity: 0;
+  }
+}
+
+/* Compact Markdown rendering inside thought-bubble (text) nodes. */
+.gb-md {
+  /* Per-node text size: a text node can set --gb-font-size on its wrapper; children use em so they scale. */
+  font-size: var(--gb-font-size, 0.875rem);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.gb-md > :first-child { margin-top: 0; }
+.gb-md > :last-child { margin-bottom: 0; }
+.gb-md p { margin: 0.4em 0; }
+.gb-md h1 { font-size: 1.25em; font-weight: 700; margin: 0.4em 0 0.2em; }
+.gb-md h2 { font-size: 1.12em; font-weight: 700; margin: 0.4em 0 0.2em; }
+.gb-md h3 { font-size: 1em; font-weight: 700; margin: 0.4em 0 0.2em; }
+.gb-md ul { list-style: disc; padding-left: 1.2em; margin: 0.3em 0; }
+.gb-md ol { list-style: decimal; padding-left: 1.4em; margin: 0.3em 0; }
+.gb-md li { margin: 0.1em 0; }
+.gb-md a { color: var(--md-sys-color-primary); text-decoration: underline; }
+.gb-md strong { font-weight: 700; }
+.gb-md em { font-style: italic; }
+.gb-md code {
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  padding: 0.05em 0.3em;
+  border-radius: 0.25rem;
+}
+.gb-md pre {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  padding: 0.5em 0.6em;
+  border-radius: 0.4rem;
+  overflow-x: auto;
+  margin: 0.4em 0;
+}
+.gb-md pre code { background: none; padding: 0; }
+.gb-md blockquote {
+  border-left: 3px solid color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent);
+  padding-left: 0.6em;
+  margin: 0.4em 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.gb-md hr { border: none; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 0.5em 0; }
+.gb-md table { border-collapse: collapse; margin: 0.4em 0; font-size: 0.85em; }
+.gb-md th,
+.gb-md td { border: 1px solid var(--md-sys-color-outline-variant); padding: 0.2em 0.4em; }
+.gb-md input[type="checkbox"] { margin-right: 0.3em; }
+/* inline HTML tags (sanitized) — themed so they stay legible in light + dark */
+.gb-md mark {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 32%, transparent);
+  color: inherit;
+  padding: 0 0.15em;
+  border-radius: 0.2em;
+}
+.gb-md kbd {
+  font-family: var(--font-geist-mono, ui-monospace, monospace);
+  font-size: 0.8em;
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 0.3em;
+  padding: 0.05em 0.35em;
+}
+.gb-md sub, .gb-md sup { font-size: 0.75em; line-height: 0; }
+.gb-md u, .gb-md ins { text-decoration: underline; }
+.gb-md abbr { text-decoration: underline dotted; cursor: help; }
+.gb-md small { font-size: 0.85em; color: var(--md-sys-color-on-surface-variant); }
+.gb-md details { margin: 0.3em 0; }
+.gb-md summary { cursor: pointer; font-weight: 600; }
+
+/* React Flow chrome themed to M3 (legible in light AND dark). */
+.react-flow__controls {
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--md-sys-color-surface-container);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface);
+}
+.react-flow__controls-button:hover {
+  background: var(--md-sys-color-surface-variant);
+}
+.react-flow__controls-button svg {
+  fill: var(--md-sys-color-on-surface);
+}
+.react-flow__minimap {
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 0.5rem;
+}
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--md-sys-color-surface) 55%, transparent);
+}
+.react-flow__minimap-node {
+  fill: var(--md-sys-color-outline);
+}
+.react-flow__attribution {
+  display: none;
+}

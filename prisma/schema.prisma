@@ -1,0 +1,381 @@
+// GalacticBoard — Prisma schema.
+// Phase 1 ships the FULL final schema so later phases add no destructive migration.
+// SQLite default (single-file self-host); swap `provider` to "postgresql" + a postgres URL for scale.
+//
+// SQLite caveats handled here:
+//  - No native enums  -> role / share mode / suggestion status are String columns
+//    (allowed values documented inline, validated in app via Zod unions; see app/lib/types.ts).
+//  - JSON is stored via Prisma's Json type (TEXT under the hood); treated as opaque + Zod-validated.
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String?
+  passwordHash    String? // argon2id; null for OAuth-only accounts
+  isInstanceAdmin Boolean  @default(false) // synced from ADMIN_EMAILS env; NOT a board role
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  boards          Board[] // creator back-ref
+  assets          Asset[]
+  memberships     BoardMembership[] @relation("MembershipUser")
+  invitesSent     BoardMembership[] @relation("MembershipInviter")
+  invitationsSent Invitation[]      @relation("InvitationInviter")
+  apiTokens       ApiToken[]
+  crossLinks      CrossBoardLink[]
+
+  @@map("users")
+}
+
+// ───────────────────────────── RBAC ─────────────────────────────
+// role: "OWNER" | "TEAM" | "VISITOR"  ("COMMENTER" reserved). GUEST is never a row.
+model BoardMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("MembershipUser", fields: [userId], references: [id], onDelete: Cascade)
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  role      String   @default("VISITOR")
+  invitedBy String?
+  inviter   User?    @relation("MembershipInviter", fields: [invitedBy], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, boardId]) // one role per (user, board); authorize() lookup key
+  @@index([boardId, role]) // list members + last-owner guard count
+  @@index([userId]) // "boards I'm a member of"
+  @@map("board_memberships")
+}
+
+model Invitation {
+  id         String    @id @default(cuid())
+  boardId    String
+  board      Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  email      String // MUST equal the authenticated session's verified email at accept
+  role       String    @default("VISITOR") // never "OWNER" via invite
+  token      String    @unique // app-generated CSPRNG (crypto.randomBytes(32).base64url)
+  invitedBy  String
+  inviter    User      @relation("InvitationInviter", fields: [invitedBy], references: [id], onDelete: Cascade)
+  expiresAt  DateTime // expired -> 410 Gone
+  acceptedAt DateTime? // single-use; consumed via conditional update in the accept transaction
+  createdAt  DateTime  @default(now())
+
+  @@unique([boardId, email])
+  @@index([email])
+  @@map("invitations")
+}
+
+// ───────────────────────────── Canonical graph ─────────────────────────────
+model Board {
+  id            String   @id @default(cuid())
+  publicId      String   @unique @default(cuid()) // stable portable id (import/export, cross-instance)
+  userId        String // creator/audit pointer (NOT the permission authority)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String   @default("Untitled board")
+  settings      Json? // viewport {x,y,zoom}, theme, autoEdgeColor...
+  schemaVersion Int      @default(1) // import/export migration discriminator
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  nodes        Node[]
+  edges        Edge[]
+  publicShares PublicShare[]
+  assets       Asset[]
+  memberships  BoardMembership[]
+  invitations  Invitation[]
+  crossLinksOut CrossBoardLink[] @relation("CrossLinkSource")
+  crossLinksIn  CrossBoardLink[] @relation("CrossLinkTarget")
+  versions     BoardVersion[]
+  groups       NodeGroup[]
+
+  @@index([userId])
+  @@map("boards")
+}
+
+model Node {
+  id      String @id @default(cuid())
+  boardId String
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  // Mind-map structure (all optional — a board can be a pure moodboard)
+  parentId  String?
+  parent    Node?   @relation("NodeTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Node[]  @relation("NodeTree")
+  layout    String  @default("manual") // "auto" = layout engine places it | "manual" = pinned to (posX,posY)
+  collapsed Boolean @default(false) // folding
+  order     Int     @default(0) // sibling ordering (for auto-layout)
+
+  // Position (nullable): honored when layout="manual"; last-computed cache when "auto"
+  type   String @default("text") // React Flow nodeTypes key: text | swatch | image | ...
+  posX   Float?
+  posY   Float?
+  width  Float?
+  height Float?
+  zIndex Int    @default(0)
+
+  data  Json? // type-specific, Zod-validated: text->{text}; swatch->{hex}; image->{assetId,alt}
+  style Json?
+
+  edgesOut          Edge[]            @relation("SourceNode")
+  edgesIn           Edge[]            @relation("TargetNode")
+  publicMemberships PublicShareNode[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([boardId])
+  @@index([parentId])
+  @@map("nodes")
+}
+
+// Stored CONNECTOR (the "dynamic line"). Tree edges are DERIVED from Node.parentId, never stored here.
+model Edge {
+  id       String @id @default(cuid())
+  boardId  String
+  board    Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  sourceId String
+  source   Node   @relation("SourceNode", fields: [sourceId], references: [id], onDelete: Cascade)
+  targetId String
+  target   Node   @relation("TargetNode", fields: [targetId], references: [id], onDelete: Cascade)
+
+  kind     String  @default("connector")
+  type     String  @default("animated") // React Flow edgeTypes key
+  animated Boolean @default(true)
+  label    String?
+  data     Json? // { flowSpeed, gradientFrom, gradientTo, startArrow, endArrow, dash, ... }
+  style    Json?
+
+  publicMemberships PublicShareEdge[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // No unique(source,target): multiple connectors between a pair are valid; client dedupes same-drag.
+  @@index([boardId])
+  @@index([sourceId])
+  @@index([targetId])
+  @@map("edges")
+}
+
+// ───────────────────────────── Assets ─────────────────────────────
+model Asset {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  boardId       String?
+  board         Board?   @relation(fields: [boardId], references: [id], onDelete: SetNull)
+  storageDriver String   @default("local") // "local" | "s3"
+  storageKey    String
+  mimeType      String
+  byteSize      Int
+  width         Int?
+  height        Int?
+  checksum      String? // sha256 dedupe/integrity
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([boardId])
+  @@map("assets")
+}
+
+// ───────────────────────────── Public sharing (anti-grief) ─────────────────────────────
+// mode: "SNAPSHOT" | "LIVE_SUBSET"
+model PublicShare {
+  id      String @id @default(cuid())
+  boardId String
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  secret  String @unique // app-generated CSPRNG token (NOT a DB default)
+  mode    String @default("SNAPSHOT")
+
+  isPublished     Boolean @default(true)
+  suggestionsOpen Boolean @default(true)
+
+  // Host-configurable guest limits (feature #9; r/place-style tunable cooldown)
+  cooldownSeconds         Int     @default(30)
+  maxPerWindow            Int     @default(5)
+  windowSeconds           Int     @default(300)
+  dailyCap                Int     @default(50)
+  burstAllowance          Int     @default(2)
+  requireCaptchaAboveRate Boolean @default(false)
+  maxSuggestions          Int     @default(500) // global per-share intake ceiling
+
+  snapshot        Json? // SNAPSHOT: frozen {nodes,edges}, internal ids stripped
+  snapshotTakenAt DateTime? // ETag source for public reads
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nodeMembers PublicShareNode[]
+  edgeMembers PublicShareEdge[]
+  suggestions Suggestion[]
+  throttles   SuggestionThrottle[]
+
+  @@index([boardId])
+  @@map("public_shares")
+}
+
+model PublicShareNode {
+  shareId String
+  share   PublicShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  nodeId  String
+  node    Node        @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@id([shareId, nodeId])
+  @@index([shareId])
+  @@map("public_share_nodes")
+}
+
+model PublicShareEdge {
+  shareId String
+  share   PublicShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  edgeId  String
+  edge    Edge        @relation(fields: [edgeId], references: [id], onDelete: Cascade)
+
+  @@id([shareId, edgeId])
+  @@index([shareId])
+  @@map("public_share_edges")
+}
+
+// Append-only proposals. INERT JSON payload, NO FK into the canonical graph.
+// status: "PENDING" | "ACCEPTED" | "REJECTED"
+model Suggestion {
+  id             String  @id @default(cuid())
+  shareId        String
+  share          PublicShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  status         String  @default("PENDING")
+  payloadVersion Int     @default(1)
+  authorName     String?
+  authorNote     String?
+  payload        Json // { nodes:[{tempId,type,posX,posY,data,style}], edges:[{source:{kind,ref},target:{kind,ref},...}] }
+  authorTokenHash String? // sha256(client authorToken) — gates author-only live move/edit; null = legacy/no-token
+  payloadRev     Int     @default(0) // optimistic-lock counter for live payload upserts + per-item accept/discard
+  ipHash         String? // sha256(ip + serverSecret) — abuse correlation, NOT anonymizing
+  userAgent      String?
+  reviewedAt     DateTime?
+  reviewedBy     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  votes          SuggestionVote[]
+
+  @@index([shareId, status])
+  @@index([shareId, createdAt]) // cursor pagination + time-window archive sweeps
+  @@index([ipHash])
+  @@map("suggestions")
+}
+
+// Anonymous up/down vote on ONE item (tempId) of a pending suggestion. One vote per voter (by hashed
+// client token) per item; value is +1 or -1. Lives in the suggestion domain — NO FK into the canonical
+// graph. Tallies help the owner prioritize what to adopt.
+model SuggestionVote {
+  id           String     @id @default(cuid())
+  suggestionId String
+  suggestion   Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  tempId       String // which item within the suggestion's payload
+  voterHash    String // sha256(client authorToken) of the voter
+  value        Int // +1 | -1
+  createdAt    DateTime   @default(now())
+
+  @@unique([suggestionId, tempId, voterHash])
+  @@index([suggestionId])
+  @@map("suggestion_votes")
+}
+
+// DURABLE AUDIT / fallback only — NOT the hot-path limiter (that's the in-memory/Redis RateLimiter).
+model SuggestionThrottle {
+  id          String      @id @default(cuid())
+  shareId     String
+  share       PublicShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  ipHash      String
+  windowStart DateTime
+  count       Int         @default(0)
+
+  @@unique([shareId, ipHash, windowStart])
+  @@index([shareId, ipHash])
+  @@map("suggestion_throttles")
+}
+
+// ───────────────────────────── API tokens (REST API + MCP, #14) ─────────────────────────────
+// Scoped personal-access tokens; only the sha256 hash is stored. scopes: "read" | "read,write".
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  scopes     String    @default("read,write")
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("api_tokens")
+}
+
+// ───────────────────────────── Cross-board "galaxy" links (#11) ─────────────────────────────
+// A hyperlane between two boards (optionally anchored at specific nodes for inception drill-down).
+// Authz: creatable only between boards the principal can view; the galaxy view filters to links
+// whose BOTH endpoints the principal may see.
+model CrossBoardLink {
+  id            String   @id @default(cuid())
+  sourceBoardId String
+  sourceBoard   Board    @relation("CrossLinkSource", fields: [sourceBoardId], references: [id], onDelete: Cascade)
+  targetBoardId String
+  targetBoard   Board    @relation("CrossLinkTarget", fields: [targetBoardId], references: [id], onDelete: Cascade)
+  sourceNodeId  String? // optional node anchor on the source board
+  targetNodeId  String? // optional node anchor on the target board
+  label         String?
+  createdBy     String
+  creator       User     @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@index([sourceBoardId])
+  @@index([targetBoardId])
+  @@map("cross_board_links")
+}
+
+// ───────────────────────────── Version history (P7) ─────────────────────────────
+// An immutable snapshot of a board's graph ({nodes,edges}) for restore / time-travel.
+// Independent of real-time collab — works on the single-user + RBAC base today.
+model BoardVersion {
+  id        String   @id @default(cuid())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  label     String? // user-given name, else auto "Snapshot · <time>"
+  snapshot  Json // { nodes: SnapshotNode[], edges: SnapshotEdge[] }
+  nodeCount Int      @default(0)
+  edgeCount Int      @default(0)
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([boardId, createdAt])
+  @@map("board_versions")
+}
+
+// ───────────────────────────── Named visual groups / "clouds" (tagging) ─────────────────────────────
+// A labeled, taggable region drawn behind a set of member nodes. The cloud's box is derived live
+// from member positions on the client; only the membership + label/color/tags are persisted.
+model NodeGroup {
+  id        String   @id @default(cuid())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  label     String?
+  color     String? // hex tint for the cloud fill/border
+  tags      Json? // string[]
+  nodeIds   Json // string[] member node ids
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([boardId])
+  @@map("node_groups")
+}

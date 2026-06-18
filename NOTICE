@@ -1,0 +1,28 @@
+Galactic Map
+Copyright (c) 2026 NomadsGalaxy (https://nomadsgalaxy.com)
+
+Licensed under the Open Community License v1.1 with add-on conditions:
+
+    OCL v1.1 + SWAtt v1 + Micro v1
+
+Creator / licensor: NomadsGalaxy (https://nomadsgalaxy.com)
+
+Add-on conditions (binding — full text in LICENSE):
+
+    SWAtt v1  Software Attribution
+              For software derivatives, the creator identification must be
+              visible to the user in the user interface AND in the source code,
+              e.g. "Galactic Map by NomadsGalaxy".
+
+    Micro v1  Micro Business
+              Free commercial use is capped at EUR 1,000,000 annual gross
+              revenue (including affiliates under common control); above that a
+              separate business license is required.
+
+Attribution string for derivatives:
+
+    Galactic Map by NomadsGalaxy — https://nomadsgalaxy.com
+
+References:
+    Full license text (base OCL + add-on conditions) ... LICENSE
+    OCL upstream ... https://github.com/OpenCommunityLicence/OpenCommunityLicence (release/v1.1)
