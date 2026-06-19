@@ -75,6 +75,10 @@ export default function RootLayout({
               </a>
               <span className="mx-1.5 text-outline-variant" aria-hidden="true">·</span>
               <ReportBug />
+              <span className="mx-1.5 text-outline-variant" aria-hidden="true">·</span>
+              <a href="/privacy" className="font-medium text-on-surface hover:underline">
+                Privacy
+              </a>
             </span>
           </footer>
         </ThemeProvider>
