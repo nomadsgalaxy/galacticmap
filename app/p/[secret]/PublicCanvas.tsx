@@ -49,17 +49,18 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 type CSuggestionNode = { tempId: string; type: string; x: number; y: number; width?: number | null; height?: number | null; data: Record<string, unknown> };
 type CSuggestion = { id: string; authorName: string | null; nodes: CSuggestionNode[]; edges: { source: string; target: string }[]; votes: Record<string, { up: number; down: number }> };
 
-export function PublicCanvas({ secret, snapshot }: { secret: string; snapshot: ShareSnapshot }) {
+export function PublicCanvas({ secret, snapshot, embed = false }: { secret: string; snapshot: ShareSnapshot; embed?: boolean }) {
   return (
     <div className="relative h-[100dvh] w-full">
       <ReactFlowProvider>
-        <PublicBoard secret={secret} snapshot={snapshot} />
+        <PublicBoard secret={secret} snapshot={snapshot} embed={embed} />
       </ReactFlowProvider>
     </div>
   );
 }
 
-function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnapshot }) {
+// `embed` = read-only showcase mode for <iframe> embedding: no suggestion/voting UI, trimmed chrome.
+function PublicBoard({ secret, snapshot, embed }: { secret: string; snapshot: ShareSnapshot; embed: boolean }) {
   const rf = useReactFlow();
   const colorMode = useColorMode();
   const [graph, setGraph] = useState<ShareSnapshot>(snapshot);
@@ -71,7 +72,7 @@ function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnap
   const [ownId, setOwnId] = useState<string | null>(null);
   const [myVotes, setMyVotes] = useState<Record<string, number>>({}); // "sugId:tempId" -> 1|-1
   const tmp = useRef(0);
-  const suggesting = graph.suggestionsOpen;
+  const suggesting = !embed && graph.suggestionsOpen; // embeds are view-only — never recommend additions
 
   // Anonymous author identity: an opaque token (per share) that gates editing this author's own pending
   // suggestion. Stored client-side only; the server keeps just its hash. Clearing storage = a fresh row.
@@ -94,6 +95,7 @@ function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnap
   // Reconcile the ghost layer with the server's current PENDING set (self-heals after accept/discard,
   // even if an incremental frame was missed).
   const loadSuggestions = useCallback(async () => {
+    if (embed) return; // embeds never fetch/show suggestions
     try {
       const res = await fetch(`/api/p/${secret}/suggestions`, { cache: "no-store" });
       if (!res.ok) return;
@@ -102,7 +104,7 @@ function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnap
     } catch {
       /* keep last good */
     }
-  }, [secret]);
+  }, [secret, embed]);
 
   // ── Live updates (SSE; poll fallback) ──
   const lastJson = useRef<string>("");
@@ -268,6 +270,7 @@ function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnap
 
   // Others' pending suggestions as read-only ghosts (my own renders from the editable proposal layer).
   const otherGhostNodes = useMemo<Node[]>(() => {
+    if (embed) return []; // embeds show only the published board, no pending suggestions
     const out: Node[] = [];
     let placed = 0;
     for (const s of allSuggestions) {
@@ -294,7 +297,7 @@ function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnap
       }
     }
     return out;
-  }, [allSuggestions, ownId]);
+  }, [allSuggestions, ownId, embed]);
 
   const otherGhostEdges = useMemo<Edge[]>(() => {
     const out: Edge[] = [];
@@ -465,15 +468,17 @@ function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnap
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={16} color="var(--md-sys-color-outline-variant)" />
-        <MiniMap pannable zoomable style={{ bottom: 76 }} />
+        {!embed && <MiniMap pannable zoomable style={{ bottom: 76 }} />}
         <Controls showInteractive={false} />
       </ReactFlow>
 
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-2 p-3">
-        <div className="rounded-control border border-outline-variant bg-surface-container/95 px-3 py-1.5 text-sm font-medium text-on-surface shadow-elev-1 backdrop-blur">
-          {graph.boardTitle} <span className="text-on-surface-variant">· public · live</span>
-        </div>
-      </header>
+      {!embed && (
+        <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-2 p-3">
+          <div className="rounded-control border border-outline-variant bg-surface-container/95 px-3 py-1.5 text-sm font-medium text-on-surface shadow-elev-1 backdrop-blur">
+            {graph.boardTitle} <span className="text-on-surface-variant">· public · live</span>
+          </div>
+        </header>
+      )}
 
       {suggesting && (
         <ProposePanel
@@ -486,7 +491,7 @@ function PublicBoard({ secret, snapshot }: { secret: string; snapshot: ShareSnap
         />
       )}
 
-      <CommunityPanel suggestions={allSuggestions} ownId={ownId} myVotes={myVotes} onVote={vote} />
+      {!embed && <CommunityPanel suggestions={allSuggestions} ownId={ownId} myVotes={myVotes} onVote={vote} />}
     </VariablesProvider>
   );
 }
