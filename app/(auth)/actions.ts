@@ -13,6 +13,14 @@ function safeCallback(raw: unknown): string {
   return s.startsWith("/") && !s.startsWith("//") ? s : "/";
 }
 
+// Start an OAuth sign-in (GitHub/GitLab). signIn() throws NEXT_REDIRECT to the provider on success, so
+// we don't catch it. Provider is allowlisted so the form field can't request an arbitrary provider.
+export async function oauthSignIn(formData: FormData): Promise<void> {
+  const provider = String(formData.get("provider") ?? "");
+  if (provider !== "github" && provider !== "gitlab") return;
+  await signIn(provider, { redirectTo: safeCallback(formData.get("callbackUrl")) });
+}
+
 export async function loginAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
