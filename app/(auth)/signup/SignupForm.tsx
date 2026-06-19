@@ -1,0 +1,53 @@
+"use client";
+
+import { useActionState } from "react";
+import Link from "next/link";
+import { signupAction } from "../actions";
+
+export function SignupForm() {
+  const [state, action, pending] = useActionState(signupAction, undefined);
+  return (
+    <>
+      <form action={action} className="flex flex-col gap-3">
+        <input
+          name="name"
+          type="text"
+          placeholder="Name (optional)"
+          autoComplete="name"
+          className="rounded-control border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface outline-none focus-visible:border-primary"
+        />
+        <input
+          name="email"
+          type="email"
+          required
+          placeholder="Email"
+          autoComplete="email"
+          className="rounded-control border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface outline-none focus-visible:border-primary"
+        />
+        <input
+          name="password"
+          type="password"
+          required
+          minLength={8}
+          placeholder="Password (min 8 chars)"
+          autoComplete="new-password"
+          className="rounded-control border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface outline-none focus-visible:border-primary"
+        />
+        {state?.error && <p className="text-sm text-error">{state.error}</p>}
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-control bg-primary px-4 py-2 font-medium text-on-primary shadow-elev-1 transition hover:opacity-90 active:scale-[.98] disabled:opacity-60"
+        >
+          {pending ? "Creating…" : "Sign up"}
+        </button>
+      </form>
+      <p className="text-center text-sm text-on-surface-variant">
+        Already have an account?{" "}
+        <Link href="/login" className="font-medium text-primary hover:underline">
+          Sign in
+        </Link>
+      </p>
+    </>
+  );
+}

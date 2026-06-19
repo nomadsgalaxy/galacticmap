@@ -5,6 +5,7 @@ import { z } from "zod";
 import { hash } from "@node-rs/argon2";
 import { signIn } from "@/auth";
 import { prisma } from "@/app/lib/db";
+import { passwordLoginEnabled } from "@/app/lib/auth-config";
 
 export type AuthFormState = { error?: string } | undefined;
 
@@ -35,6 +36,7 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
 }
 
 export async function signupAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  if (!passwordLoginEnabled()) return { error: "Password sign-up is disabled on this instance." };
   const parsed = z
     .object({
       email: z.string().email(),

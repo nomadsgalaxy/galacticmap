@@ -1,3 +1,5 @@
+<img src="public/logo.svg" alt="Galactic Map" width="72" height="72" />
+
 # Galactic Map
 
 A self-hostable, hybrid **moodboard + mind-map**. Drop images, color swatches, links, text, spreadsheets, and live "variable trackers" onto an infinite canvas, connect them with smart orthogonal connectors, group them into labelled clouds, and publish a read-only public view that anyone can browse (and optionally suggest changes to).

@@ -1,28 +1,24 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { oauthEnabled, passwordLoginEnabled } from "@/app/lib/auth-config";
 import { oauthSignIn } from "../actions";
 import { CredentialsForm } from "./CredentialsForm";
 
-// Dynamic so the OAuth buttons reflect RUNTIME env (a provider shows only when its keys are set, like
-// auth.ts). Next 16 cacheComponents: the part that reads searchParams must live inside <Suspense>.
+// Dynamic so the sign-in options reflect RUNTIME env (OAuth providers + whether password login is on,
+// like auth.ts). Next 16 cacheComponents: the part that reads searchParams must live inside <Suspense>.
 export default function LoginPage({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) {
   return (
     <main className="mx-auto flex min-h-[100dvh] max-w-sm flex-col justify-center gap-6 p-8">
       <div className="text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element -- static brand mark, no optimization needed */}
+        <img src="/logo.svg" alt="" width={44} height={44} className="mx-auto mb-3 rounded-md" />
         <h1 className="text-2xl font-bold tracking-tight text-on-background">Sign in to Galactic Map</h1>
         <p className="mt-1 text-sm text-on-surface-variant">Welcome back.</p>
       </div>
 
-      <Suspense fallback={<CredentialsForm callbackUrl="/" />}>
+      <Suspense fallback={<p className="text-center text-sm text-on-surface-variant">Loading…</p>}>
         <SignInOptions searchParams={searchParams} />
       </Suspense>
-
-      <p className="text-center text-sm text-on-surface-variant">
-        No account?{" "}
-        <Link href="/signup" className="font-medium text-primary hover:underline">
-          Sign up
-        </Link>
-      </p>
     </main>
   );
 }
@@ -30,17 +26,17 @@ export default function LoginPage({ searchParams }: { searchParams: Promise<{ ca
 async function SignInOptions({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) {
   const raw = (await searchParams)?.callbackUrl;
   const callbackUrl = raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
-  const githubEnabled = !!(process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET);
-  const gitlabEnabled = !!(process.env.AUTH_GITLAB_ID && process.env.AUTH_GITLAB_SECRET);
+  const oauth = oauthEnabled();
+  const passwordOn = passwordLoginEnabled();
 
   const oauthBtn =
     "flex w-full items-center justify-center gap-2 rounded-control border border-outline-variant bg-surface px-4 py-2 text-sm font-medium text-on-surface transition hover:bg-surface-variant active:scale-[.98]";
 
   return (
     <>
-      {(githubEnabled || gitlabEnabled) && (
+      {oauth.any && (
         <div className="flex flex-col gap-2">
-          {githubEnabled && (
+          {oauth.github && (
             <form action={oauthSignIn}>
               <input type="hidden" name="provider" value="github" />
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
@@ -50,7 +46,7 @@ async function SignInOptions({ searchParams }: { searchParams: Promise<{ callbac
               </button>
             </form>
           )}
-          {gitlabEnabled && (
+          {oauth.gitlab && (
             <form action={oauthSignIn}>
               <input type="hidden" name="provider" value="gitlab" />
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
@@ -60,13 +56,24 @@ async function SignInOptions({ searchParams }: { searchParams: Promise<{ callbac
               </button>
             </form>
           )}
-          <div className="flex items-center gap-3 text-xs text-on-surface-variant">
-            <span className="h-px flex-1 bg-outline-variant" /> or <span className="h-px flex-1 bg-outline-variant" />
-          </div>
+          {passwordOn && (
+            <div className="flex items-center gap-3 text-xs text-on-surface-variant">
+              <span className="h-px flex-1 bg-outline-variant" /> or <span className="h-px flex-1 bg-outline-variant" />
+            </div>
+          )}
         </div>
       )}
 
-      <CredentialsForm callbackUrl={callbackUrl} />
+      {passwordOn && <CredentialsForm callbackUrl={callbackUrl} />}
+
+      {passwordOn && (
+        <p className="text-center text-sm text-on-surface-variant">
+          No account?{" "}
+          <Link href="/signup" className="font-medium text-primary hover:underline">
+            Sign up
+          </Link>
+        </p>
+      )}
     </>
   );
 }

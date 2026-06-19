@@ -17,6 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Galactic Map",
   description: "Self-hostable hybrid moodboard + mind-map.",
+  icons: { icon: "/logo.svg" },
 };
 
 export const viewport: Viewport = {

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Galactic Map">
+  <rect width="32" height="32" rx="7" fill="#0e0e16"/>
+  <path d="M8.5 22.5 L16 11 L23.5 17.5" fill="none" stroke="#8b5cf6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#a78bfa">
+    <circle cx="8.5" cy="22.5" r="2.7"/>
+    <circle cx="16" cy="11" r="2.7"/>
+    <circle cx="23.5" cy="17.5" r="2.7"/>
+  </g>
+</svg>

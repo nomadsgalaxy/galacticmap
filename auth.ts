@@ -5,6 +5,7 @@ import GitLab from "next-auth/providers/gitlab";
 import { z } from "zod";
 import { prisma } from "@/app/lib/db";
 import { verifyPassword } from "@/app/lib/passwords";
+import { oauthEnabled, passwordLoginEnabled } from "@/app/lib/auth-config";
 
 const adminEmails = (process.env.ADMIN_EMAILS ?? "")
   .split(",")
@@ -13,26 +14,31 @@ const adminEmails = (process.env.ADMIN_EMAILS ?? "")
 
 const isAdmin = (email?: string | null) => !!email && adminEmails.includes(email.toLowerCase());
 
-// Pluggable providers: each OAuth provider is enabled only when its env keys are present.
-const providers: NextAuthConfig["providers"] = [
-  Credentials({
-    credentials: { email: {}, password: {} },
-    authorize: async (creds) => {
-      const parsed = z
-        .object({ email: z.string().email(), password: z.string().min(1) })
-        .safeParse(creds);
-      if (!parsed.success) return null;
-      const email = parsed.data.email.toLowerCase();
-      const user = await prisma.user.findUnique({ where: { email } });
-      if (!user?.passwordHash) return null;
-      const ok = await verifyPassword(user.passwordHash, parsed.data.password);
-      if (!ok) return null;
-      return { id: user.id, email: user.email, name: user.name ?? undefined };
-    },
-  }),
-];
-if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) providers.push(GitHub);
-if (process.env.AUTH_GITLAB_ID && process.env.AUTH_GITLAB_SECRET) providers.push(GitLab);
+// Pluggable providers: each OAuth provider is enabled only when its env keys are present; email/password
+// is on unless AUTH_PASSWORD_DISABLED makes the instance OAuth-only (see auth-config.ts).
+const providers: NextAuthConfig["providers"] = [];
+const oauth = oauthEnabled();
+if (oauth.github) providers.push(GitHub);
+if (oauth.gitlab) providers.push(GitLab);
+if (passwordLoginEnabled()) {
+  providers.push(
+    Credentials({
+      credentials: { email: {}, password: {} },
+      authorize: async (creds) => {
+        const parsed = z
+          .object({ email: z.string().email(), password: z.string().min(1) })
+          .safeParse(creds);
+        if (!parsed.success) return null;
+        const email = parsed.data.email.toLowerCase();
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user?.passwordHash) return null;
+        const ok = await verifyPassword(user.passwordHash, parsed.data.password);
+        if (!ok) return null;
+        return { id: user.id, email: user.email, name: user.name ?? undefined };
+      },
+    }),
+  );
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
