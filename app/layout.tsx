@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./_components/ThemeProvider";
 import { ThemeForge } from "./_components/ThemeForge";
+import { ReportBug } from "./_components/ReportBug";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -72,6 +73,8 @@ export default function RootLayout({
               >
                 NomadsGalaxy
               </a>
+              <span className="mx-1.5 text-outline-variant" aria-hidden="true">·</span>
+              <ReportBug />
             </span>
           </footer>
         </ThemeProvider>
