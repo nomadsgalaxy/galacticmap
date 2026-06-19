@@ -23,8 +23,9 @@ export default function LoginPage({ searchParams }: { searchParams: Promise<{ ca
   );
 }
 
-async function SignInOptions({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) {
-  const raw = (await searchParams)?.callbackUrl;
+async function SignInOptions({ searchParams }: { searchParams: Promise<{ callbackUrl?: string; deleted?: string }> }) {
+  const sp = await searchParams;
+  const raw = sp?.callbackUrl;
   const callbackUrl = raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
   const oauth = oauthEnabled();
   const passwordOn = passwordLoginEnabled();
@@ -34,6 +35,11 @@ async function SignInOptions({ searchParams }: { searchParams: Promise<{ callbac
 
   return (
     <>
+      {sp?.deleted && (
+        <p className="rounded-control border border-outline-variant bg-surface-container px-3 py-2 text-center text-sm text-on-surface-variant">
+          Your account and all its data were deleted.
+        </p>
+      )}
       {oauth.any && (
         <div className="flex flex-col gap-2">
           {oauth.github && (

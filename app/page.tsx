@@ -47,6 +47,12 @@ async function Dashboard() {
           >
             API tokens
           </Link>
+          <Link
+            href="/settings/account"
+            className="rounded-control border border-outline-variant px-3 py-1.5 text-sm text-on-surface-variant transition hover:bg-surface-variant hover:text-on-surface active:scale-[.98]"
+          >
+            Account
+          </Link>
           <form
             action={async () => {
               "use server";
