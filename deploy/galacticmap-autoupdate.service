@@ -1,0 +1,11 @@
+[Unit]
+Description=Galactic Map self-update (pull from GitHub + rebuild)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/galactic-map-autoupdate.env
+ExecStart=/usr/local/bin/galacticmap-autoupdate
+TimeoutStartSec=1200
