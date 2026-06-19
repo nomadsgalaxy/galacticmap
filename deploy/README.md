@@ -16,20 +16,20 @@ This matches the manual tarball workflow in `galacticmap-CONNECT.md` — it just
 From a checkout of the repo on the box (after one manual deploy, that's `/opt/galactic-map`):
 
 ```bash
-# 1. Token — a fine-grained GitHub PAT with Contents: Read-only on the repo.
+# 1. Script + units.
+sudo install -m 755 deploy/autoupdate.sh /usr/local/bin/galacticmap-autoupdate
+sudo cp deploy/galacticmap-autoupdate.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# 2. (Optional) Token — only for a private repo or the higher 5000/hr API rate limit. A public repo needs
+#    none; skip this and the service runs unauthenticated.
 sudo install -m 600 /dev/stdin /etc/galactic-map-autoupdate.env <<'EOF'
 GH_TOKEN=github_pat_xxxxxxxx
 # GM_REPO=nomadsgalaxy/galacticmap   # override for a fork
 EOF
 
-# 2. Script + units.
-sudo install -m 755 deploy/autoupdate.sh /usr/local/bin/galacticmap-autoupdate
-sudo cp deploy/galacticmap-autoupdate.{service,timer} /etc/systemd/system/
-sudo systemctl daemon-reload
-
 # 3. Seed the current SHA so the first tick doesn't rebuild what's already running.
-curl -fsSL -H "Authorization: Bearer $(sed -n 's/^GH_TOKEN=//p' /etc/galactic-map-autoupdate.env)" \
-  -H "Accept: application/vnd.github.sha" \
+curl -fsSL -H "Accept: application/vnd.github.sha" \
   https://api.github.com/repos/nomadsgalaxy/galacticmap/commits/main | sudo tee /opt/galactic-map/.deployed-sha
 
 # 4. Enable.

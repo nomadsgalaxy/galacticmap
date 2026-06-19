@@ -6,6 +6,8 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/galactic-map-autoupdate.env
+# Optional: holds GH_TOKEN (and any GM_* overrides). The leading - means "skip if absent" — a public repo
+# needs no token, so the file is optional.
+EnvironmentFile=-/etc/galactic-map-autoupdate.env
 ExecStart=/usr/local/bin/galacticmap-autoupdate
 TimeoutStartSec=1200

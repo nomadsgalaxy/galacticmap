@@ -10,7 +10,7 @@
 # and we don't record the new SHA, so it retries on the next tick. Run by galacticmap-autoupdate.timer.
 #
 # Config (env — see galacticmap-autoupdate.service):
-#   GH_TOKEN   GitHub token with Contents:read on the repo (required; repo is private)
+#   GH_TOKEN   optional GitHub token — needed only for a private repo or the 5000/hr API rate limit
 #   GM_REPO    owner/name        (default nomadsgalaxy/galacticmap)
 #   GM_DIR     deploy dir        (default /opt/galactic-map)
 #   GM_BRANCH  branch to track   (default main)
@@ -22,9 +22,17 @@ DIR="${GM_DIR:-/opt/galactic-map}"
 BRANCH="${GM_BRANCH:-main}"
 OWNER="${GM_OWNER:-debian}"
 STATE="$DIR/.deployed-sha"
-: "${GH_TOKEN:?GH_TOKEN is required}"
+GH_TOKEN="${GH_TOKEN:-}"
 
-gh() { curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$@"; }
+# Auth is optional: a public repo works unauthenticated (~60 req/hr). Set GH_TOKEN for a private repo or
+# the higher 5000/hr rate limit — the Authorization header is only sent when a token is present.
+gh() {
+  if [ -n "$GH_TOKEN" ]; then
+    curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+  else
+    curl -fsSL -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+  fi
+}
 
 # Plain SHA, no jq: the commits/{ref} endpoint returns the bare SHA with this Accept header.
 remote=$(gh -H "Accept: application/vnd.github.sha" "https://api.github.com/repos/$REPO/commits/$BRANCH")
