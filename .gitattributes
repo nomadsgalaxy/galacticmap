@@ -1,0 +1,4 @@
+# Normalize line endings to LF in the repo. The deploy shell script + systemd units must be LF to run
+# on the Linux VM, regardless of a contributor's core.autocrlf.
+* text=auto eol=lf
+*.sh text eol=lf
