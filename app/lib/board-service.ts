@@ -5,6 +5,7 @@ import { authorize, type Principal, type Role } from "@/app/lib/authz";
 import { tags } from "@/app/lib/cache-tags";
 import { serializeNode, serializeEdge } from "@/app/lib/boards";
 import { NODE_TYPES, parseNodeData, type SnapshotNode, type SnapshotEdge } from "@/app/lib/types";
+import { publishLive } from "@/app/lib/live-bus";
 
 // Headless board service used by the REST API (#14) and the MCP server.
 //
@@ -28,8 +29,37 @@ export class ApiError extends Error {
   }
 }
 
+/** A board's labelled "cloud" group of nodes. */
+export type GroupSnapshot = { id: string; label: string | null; color: string | null; tags: string[]; nodeIds: string[] };
+
+/** What changed on a board, pushed live to open editors (merged in place) and public viewers (refetch). */
+export type GraphChange = {
+  nodes?: SnapshotNode[];
+  edges?: SnapshotEdge[];
+  groups?: GroupSnapshot[];
+  deletedNodeIds?: string[];
+  deletedEdgeIds?: string[];
+  deletedGroupIds?: string[];
+  by?: string;
+};
+export function announceGraph(boardId: string, change: GraphChange): void {
+  publishLive(boardId, JSON.stringify({ type: "graph", ...change }));
+  publishLive(boardId, JSON.stringify({ type: "refresh" }));
+}
+
+export async function getGroups(boardId: string): Promise<GroupSnapshot[]> {
+  const rows = await prisma.nodeGroup.findMany({ where: { boardId }, orderBy: { createdAt: "asc" } });
+  return rows.map((g) => ({
+    id: g.id,
+    label: g.label,
+    color: g.color,
+    tags: Array.isArray(g.tags) ? (g.tags as string[]) : [],
+    nodeIds: Array.isArray(g.nodeIds) ? (g.nodeIds as string[]) : [],
+  }));
+}
+
 /** Resolve role + assert a capability; throws ApiError(403) on deny, ApiError(404) if no membership. */
-async function gate(principal: Principal, boardId: string, cap: Parameters<typeof authorize>[2]): Promise<Role> {
+export async function gate(principal: Principal, boardId: string, cap: Parameters<typeof authorize>[2]): Promise<Role> {
   const res = await authorize(principal, boardId, cap);
   if (!res.role) throw new ApiError(404, "Board not found", "not_found"); // hide existence from non-members
   if (!res.ok) throw new ApiError(403, `Forbidden: ${cap}`, "forbidden");
@@ -110,6 +140,7 @@ export async function getBoardFull(principal: Principal, boardId: string) {
     updatedAt: board.updatedAt.toISOString(),
     nodes,
     edges,
+    groups: await getGroups(boardId),
   };
 }
 
@@ -147,7 +178,9 @@ export async function createNodeSvc(principal: Principal, boardId: string, input
     },
   });
   revalidateTag(tags.board(boardId), "max");
-  return serializeNode(node);
+  const out = serializeNode(node);
+  announceGraph(boardId, { nodes: [out] });
+  return out;
 }
 
 export type UpdateNodeInput = {
@@ -189,7 +222,9 @@ export async function updateNodeSvc(
   }
   const updated = await prisma.node.update({ where: { id: nodeId }, data: patch });
   revalidateTag(tags.board(boardId), "max");
-  return serializeNode(updated);
+  const out = serializeNode(updated);
+  announceGraph(boardId, { nodes: [out] });
+  return out;
 }
 
 export async function deleteNodeSvc(principal: Principal, boardId: string, nodeId: string): Promise<void> {
@@ -197,6 +232,7 @@ export async function deleteNodeSvc(principal: Principal, boardId: string, nodeI
   const res = await prisma.node.deleteMany({ where: { id: nodeId, boardId } });
   if (res.count === 0) throw new ApiError(404, "Node not found", "not_found");
   revalidateTag(tags.board(boardId), "max");
+  announceGraph(boardId, { deletedNodeIds: [nodeId] });
 }
 
 // ───────────────────────────── Edges (connectors) ─────────────────────────────
@@ -218,7 +254,9 @@ export async function createEdgeSvc(principal: Principal, boardId: string, input
     },
   });
   revalidateTag(tags.board(boardId), "max");
-  return serializeEdge(edge);
+  const out = serializeEdge(edge);
+  announceGraph(boardId, { edges: [out] });
+  return out;
 }
 
 export async function deleteEdgeSvc(principal: Principal, boardId: string, edgeId: string): Promise<void> {
@@ -226,4 +264,5 @@ export async function deleteEdgeSvc(principal: Principal, boardId: string, edgeI
   const res = await prisma.edge.deleteMany({ where: { id: edgeId, boardId } });
   if (res.count === 0) throw new ApiError(404, "Edge not found", "not_found");
   revalidateTag(tags.board(boardId), "max");
+  announceGraph(boardId, { deletedEdgeIds: [edgeId] });
 }

@@ -165,7 +165,7 @@ function sanitizePublicNodeData(type: string, raw: unknown): Record<string, unkn
 // this bounds size/shape AND sanitizes each node's data to the public allowlist so what we persist is
 // safe to echo live. Returns null if unusable. `allowEmpty` lets the live-upsert path send 0 nodes
 // (meaning "I cleared my suggestion") without it being treated as junk.
-function normalizeProposal(raw: unknown, opts?: { allowEmpty?: boolean }): Proposal | null {
+export function normalizeProposal(raw: unknown, opts?: { allowEmpty?: boolean }): Proposal | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as { nodes?: unknown; edges?: unknown };
   if (!Array.isArray(r.nodes)) return null;

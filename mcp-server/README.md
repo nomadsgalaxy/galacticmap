@@ -35,12 +35,26 @@ required.
 |------|-------|-------------|
 | `whoami` | read | Verify the token; return the user + scopes. |
 | `list_boards` | read | List boards you can access (role + counts). |
-| `get_board` | read | Full board: nodes, edges, mind-map parent links. |
+| `describe_board` | read | The board as readable text: groups, ungrouped areas, mind-map nesting, connectors and variables, one line per node with its id. Start here. |
+| `apply_changes` | write | Add, update or delete nodes, connectors and groups in one all-or-nothing batch. Leave out x/y and the server finds free space. `mode: "propose"` sends additions to the owner as a suggestion to accept or discard instead. |
+| `get_board` | read | Full board as raw JSON: nodes, edges, groups, mind-map parent links. |
 | `create_board` | write | Create a board (you become OWNER). |
-| `add_node` | write | Add a text/swatch/image/link node; optional `parentId` for a mind-map child. |
+| `add_node` | write | Add one node at an exact position; optional `parentId` for a mind-map child. |
 | `update_node` | write | Update a node's data/position/size/parent/collapsed. |
 | `delete_node` | write | Delete a node. |
 | `link_nodes` | write | Create an animated connector edge between two nodes. |
+
+## Working with people
+
+- Changes made through the API show up live for anyone with the board open, and new nodes are
+  credited to the token's name with "(agent)" after it. Name the token after the agent.
+- `apply_changes` with `mode: "propose"` doesn't touch the board. The additions appear as ghosts
+  that an editor accepts or discards one by one. Proposals can add text, swatch and link nodes and
+  connectors; edits, moves and deletes need `mode: "apply"`. If the board was never published, a
+  private share is created to hold proposals. It stays unpublished until the owner publishes.
+- Before a batch of 10+ ops or any delete, the board is snapshotted to History as
+  "Before agent changes", so one click restores it. The last 10 of these are kept.
+- `dryRun: true` checks a batch and returns what it would do, without saving.
 
 ## Notes
 
@@ -48,5 +62,7 @@ required.
   `link_nodes` creates a free moodboard connector. Both are optional — a board can be a pure
   moodboard with no links at all.
 - **Node data shapes:** `text` → `{ "text": "# Markdown" }`, `swatch` → `{ "hex": "#6d28d9" }`,
-  `link` → `{ "url": "https://…" }`, `image` → `{ "assetId": "…" }` (upload assets via the app).
+  `link` → `{ "url": "https://…" }`, `image` → `{ "assetId": "…" }` (upload assets via the app),
+  `spreadsheet` → `{ "rows": 4, "cols": 3, "cells": { "A1": "Hours", "B1": "=SUM(B2:B4)" } }`,
+  `tracker` → `{ "title": "Budget", "lines": ["Total: sum(cost)"] }`. Every type also takes `tags` and `notes`.
 - The server speaks stdio only; run one process per client.

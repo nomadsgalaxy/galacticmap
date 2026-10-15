@@ -4,7 +4,8 @@ import { subscribeLive } from "@/app/lib/live-bus";
 
 // Authenticated editor SSE: relays live public-suggestion frames ("sug" = ghost upsert/remove, with the
 // public-safe payload; "sug-resolved" = a moderator accepted/discarded items) to the owner's board so
-// suggestions appear/disappear in real time as hazy ghosts. Editors only — gated on suggestion:accept.
+// suggestions appear/disappear in real time as hazy ghosts, plus "graph" frames when an agent changes the
+// board through the API. Editors only — gated on suggestion:accept.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const principal = await getPrincipal();
@@ -18,7 +19,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const enc = new TextEncoder();
   let unsub: (() => void) | null = null;
   let ping: ReturnType<typeof setInterval> | null = null;
-  const EDITOR_FRAMES = new Set(["sug", "sug-resolved", "sug-vote"]);
+  const EDITOR_FRAMES = new Set(["sug", "sug-resolved", "sug-vote", "graph"]);
 
   const stream = new ReadableStream({
     start(controller) {

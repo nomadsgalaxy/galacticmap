@@ -36,6 +36,7 @@ import { SpreadsheetNode } from "./nodes/SpreadsheetNode";
 import { TrackerNode } from "./nodes/TrackerNode";
 import { VariablesProvider, useVariables } from "./VariablesContext";
 import { aggregate, formatVar, renderTrackerLine } from "../../../../lib/variables";
+import type { GraphChange as GraphChangeFrame } from "../../../../lib/board-service";
 import { AnimatedEdge } from "./edges/AnimatedEdge";
 import { TreeEdge } from "./edges/TreeEdge";
 import { toRFEdge } from "./edges/rfMap";
@@ -471,6 +472,34 @@ function Canvas({ boardId, title, canEdit, canManageMembers, aiEnabled, meName, 
     init(boardId, canEdit, initialNodes.map(toRFNode), initialEdges.map(toRFEdge));
   }, [init, boardId, canEdit, initialNodes, initialEdges]);
 
+  // An agent (or any API client) changed the board: merge it into the canvas AND the undo history, so undo
+  // only rewinds this person's own edits and its full-graph save never deletes what the agent added.
+  const applyGraphChange = useCallback((g: GraphChangeFrame) => {
+    const upNodes = new Map((g.nodes ?? []).map((n) => [n.id, toRFNode(n)]));
+    const upEdges = new Map((g.edges ?? []).map((e) => [e.id, toRFEdge(e)]));
+    const goneNodes = new Set(g.deletedNodeIds ?? []), goneEdges = new Set(g.deletedEdgeIds ?? []);
+    const merge = (graph: { nodes: Node[]; edges: Edge[] }) => {
+      const nodes = graph.nodes.filter((n) => !goneNodes.has(n.id)).map((n) => (upNodes.has(n.id) ? { ...n, ...upNodes.get(n.id)! } : n));
+      const known = new Set(nodes.map((n) => n.id));
+      for (const [id, n] of upNodes) if (!known.has(id)) nodes.push(n);
+      const edges = graph.edges
+        .filter((e) => !goneEdges.has(e.id) && !goneNodes.has(e.source) && !goneNodes.has(e.target))
+        .map((e) => (upEdges.has(e.id) ? { ...e, ...upEdges.get(e.id)! } : e));
+      const knownEdges = new Set(edges.map((e) => e.id));
+      for (const [id, e] of upEdges) if (!knownEdges.has(id)) edges.push(e);
+      return { nodes, edges };
+    };
+    useCanvasStore.setState((s) => ({ ...merge(s), past: s.past.map(merge), future: s.future.map(merge) }));
+    if (g.groups?.length || g.deletedGroupIds?.length) {
+      const gone = new Set(g.deletedGroupIds ?? []), up = new Map((g.groups ?? []).map((x) => [x.id, x]));
+      setGroups((prev) => {
+        const next = prev.filter((x) => !gone.has(x.id)).map((x) => up.get(x.id) ?? x);
+        for (const x of up.values()) if (!next.some((y) => y.id === x.id)) next.push(x);
+        return next;
+      });
+    }
+  }, []);
+
   // Live suggestions: subscribe to the authenticated editor stream and keep the ghost layer in sync.
   useEffect(() => {
     if (!canEdit) return;
@@ -508,6 +537,8 @@ function Canvas({ boardId, title, canEdit, canManageMembers, aiEnabled, meName, 
             setSuggestions((prev) =>
               prev.map((x) => (x.id === id ? { ...x, votes: { ...(x.votes ?? {}), [tempId]: { up, down } } } : x)),
             );
+          } else if (m.type === "graph") {
+            applyGraphChange(m as unknown as GraphChangeFrame);
           }
         } catch {
           /* ignore malformed frame */
@@ -517,7 +548,7 @@ function Canvas({ boardId, title, canEdit, canManageMembers, aiEnabled, meName, 
       /* SSE unsupported — ghosts still render from the initial server load */
     }
     return () => es?.close();
-  }, [canEdit, boardId]);
+  }, [canEdit, boardId, applyGraphChange]);
 
   // Real-time graph sync: mirror the store <-> the shared Yjs maps. Entirely gated on `collab`
   // (no collab server → this effect never runs → editor behaves exactly as single-user).
