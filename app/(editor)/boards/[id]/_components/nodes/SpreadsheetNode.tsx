@@ -11,6 +11,7 @@ import { evaluateCellDisplay, refName, colName, SHEET_MAX_ROWS as MAX_ROWS, SHEE
 import { stripVarTokens, scanText, cellOutput, cellForEval, aggregate, formatVar } from "../../../../../lib/variables";
 import { useVariables } from "../VariablesContext";
 import { typingAt, callAt, suggestFunctions, suggestVariables, fnDoc, splitArgs, argIndex } from "./sheetFunctions";
+import { fillRange, fillCells, inRange, type CellRange } from "./sheetFill";
 
 type Option = { label: string; insert: string; detail: string };
 
@@ -36,6 +37,10 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
 
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Click a cell to select it; drag its corner handle to copy it down/up/across, like Excel's fill handle.
+  const [sel, setSel] = useState<string | null>(null);
+  const [fill, setFill] = useState<CellRange | null>(null);
+  const activeSel = selected && canEdit ? sel : null; // the handle only shows while the sheet itself is selected
 
   // Live board-global variable registry — fed to formulas (=Sum($cost), =$cost*1.1, …).
   const { vars, units, names } = useVariables();
@@ -110,6 +115,12 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
     }
     return { display: out, varCells: flagged };
   }, [cells, rows, cols, getRaw, vars, units]);
+  // This sheet's own cell refs, so a fill drag ignores cells of another sheet under the pointer.
+  const refsHere = useMemo(() => {
+    const m: Record<string, true> = {};
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) m[refName(c, r)] = true;
+    return m;
+  }, [rows, cols]);
 
   const persist = useCallback(
     (patch: Record<string, unknown>) => {
@@ -142,6 +153,28 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
 
   const resize = (dr: number, dc: number) => persist({ rows: clampRows(rows + dr), cols: clampCols(cols + dc) });
 
+  // Fill drag: pointer capture keeps events on the handle; the cell under the pointer sets the range.
+  const cellUnder = (e: React.PointerEvent) =>
+    (document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-cell]") as HTMLElement | null)?.dataset.cell ?? null;
+  const fillHandlers = (src: string) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setFill(fillRange(src, src));
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!fill) return;
+      const over = cellUnder(e);
+      if (over && over in refsHere) setFill(fillRange(src, over));
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      if (fill && (fill.r0 !== fill.r1 || fill.c0 !== fill.c1)) persist({ cells: fillCells(cells, src, fill) });
+      setFill(null);
+    },
+  });
+
   const cellBase = "border border-outline-variant min-w-[48px] max-w-[140px] h-[22px] px-1 text-xs align-middle";
 
   return (
@@ -170,8 +203,14 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
               {Array.from({ length: cols }, (_, c) => {
                 const ref = refName(c, r);
                 const isEditing = canEdit && editing === ref;
+                const isSel = activeSel === ref && !isEditing;
+                const inFill = !!fill && inRange(fill, r, c) && !isSel;
                 return (
-                  <td key={c} className={`${cellBase} p-0`}>
+                  <td
+                    key={c}
+                    data-cell={ref}
+                    className={`${cellBase} relative p-0${isSel ? " outline outline-2 -outline-offset-2 outline-primary" : ""}${inFill ? " bg-primary/10 outline outline-1 outline-dashed -outline-offset-1 outline-primary" : ""}`}
+                  >
                     {isEditing ? (
                       <input
                         ref={inputRef}
@@ -206,10 +245,19 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                       <div
                         className={`nodrag h-full w-full cursor-text overflow-hidden whitespace-nowrap px-1 leading-[22px]${varCells[ref] ? " gb-var" : ""}`}
                         title={cells[ref] && cells[ref] !== display[ref] ? cells[ref] : undefined}
+                        onClick={() => canEdit && setSel(ref)}
                         onDoubleClick={(e) => beginEdit(ref, e.currentTarget.parentElement)}
                       >
                         {display[ref] ?? ""}
                       </div>
+                    )}
+                    {isSel && (
+                      <div
+                        className="nodrag absolute bottom-0 right-0 z-10 h-[7px] w-[7px] cursor-crosshair border border-surface bg-primary"
+                        title="Drag to fill"
+                        aria-label={`Fill from ${ref}`}
+                        {...fillHandlers(ref)}
+                      />
                     )}
                   </td>
                 );

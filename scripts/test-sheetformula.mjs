@@ -1,5 +1,6 @@
 // Self-check for the spreadsheet formula evaluator. Run: npx tsx scripts/test-sheetformula.mjs
 import { evaluateCell, evaluateCellDisplay, evaluateExpr, parseLiteral, parseRef, refName, colName, functionNames } from "../app/(editor)/boards/[id]/_components/nodes/sheetFormula.ts";
+import { shiftFormula, shiftCell, fillRange, fillCells } from "../app/(editor)/boards/[id]/_components/nodes/sheetFill.ts";
 import { FUNCTION_DOCS, typingAt, callAt, suggestFunctions, suggestVariables, splitArgs, argIndex } from "../app/(editor)/boards/[id]/_components/nodes/sheetFunctions.ts";
 
 let pass = 0, fail = 0;
@@ -318,6 +319,35 @@ eq("callAt none", callAt("=A1+", 4), null);
 eq("splitArgs brackets", splitArgs("value1, [value2, …]").join("|"), "value1|[value2, …]");
 eq("argIndex repeats", argIndex(splitArgs("value1, [value2, …]"), 5), 1);
 eq("argIndex past fixed args", argIndex(splitArgs("number, digits"), 3), -1);
+
+// --- fill handle ---
+eq("shift down", shiftFormula("C2-B2", 1, 0), "C3-B3");
+eq("shift right", shiftFormula("A1*2", 0, 2), "C1*2");
+eq("absolute both", shiftFormula("$A$1+A1", 3, 1), "$A$1+B4");
+eq("absolute column only", shiftFormula("$A1", 2, 5), "$A3");
+eq("absolute row only", shiftFormula("A$1", 2, 1), "B$1");
+eq("range", shiftFormula("SUM(A1:B3)", 1, 0), "SUM(A2:B4)");
+eq("whole columns", shiftFormula("SUM(A:A)+COUNT($B:C)", 5, 1), "SUM(B:B)+COUNT($B:D)");
+eq("function names with digits untouched", shiftFormula("LOG10(A1)+ATAN2(B1,C1)", 1, 0), "LOG10(A2)+ATAN2(B2,C2)");
+eq("strings untouched", shiftFormula('IF(A1>1,"A1 ""B2""",B1)', 1, 0), 'IF(A2>1,"A1 ""B2""",B2)');
+eq("variables untouched", shiftFormula("$rate*D2+$cost1", 1, 0), "$rate*D3+$cost1");
+eq("money literal untouched", shiftFormula("$20*D2", 1, 0), "$20*D3");
+eq("TRUE untouched", shiftFormula("IF(TRUE,A1)", 1, 0), "IF(TRUE,A2)");
+eq("exponent not a ref", shiftFormula("1e5+A1", 1, 0), "1e5+A2");
+eq("lower-case ref", shiftFormula("a1+b2", 1, 0), "A2+B3");
+eq("off the top is #REF!", shiftFormula("A1", -1, 0), "#REF!");
+eq("shiftCell formula", shiftCell("=C2-B2", 1, 0), "=C3-B3");
+eq("shiftCell named output", shiftCell("$Pay = D2*$rate", 1, 0), "$Pay = D3*$rate");
+eq("shiftCell literal copies", shiftCell("11:15 PM", 1, 0), "11:15 PM");
+eq("fillRange down", JSON.stringify(fillRange("D2", "E6")), JSON.stringify({ r0: 1, r1: 5, c0: 3, c1: 3 }));
+eq("fillRange right", JSON.stringify(fillRange("D2", "G3")), JSON.stringify({ r0: 1, r1: 1, c0: 3, c1: 6 }));
+eq("fillRange up", JSON.stringify(fillRange("D4", "D2")), JSON.stringify({ r0: 1, r1: 3, c0: 3, c1: 3 }));
+const filled = fillCells({ B2: "9:00 AM", C2: "5:00 PM", D2: "=C2-B2", B3: "10:00 PM", C3: "2:00 AM" }, "D2", fillRange("D2", "D4"));
+eq("fillCells writes shifted formulas", [filled.D3, filled.D4].join("|"), "=C3-B3|=C4-B4");
+eq("fillCells keeps the source", filled.D2, "=C2-B2");
+const gf = (r) => filled[r] ?? "";
+eq("filled formula evaluates (overnight)", evaluateCellDisplay(filled.D3, gf), "4 hours");
+eq("fillCells empty source clears", "D3" in fillCells({ D3: "x" }, "D2", fillRange("D2", "D3")), false);
 
 console.log(`\nsheetFormula — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
