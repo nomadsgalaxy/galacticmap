@@ -6,7 +6,7 @@ import { NodeHandles } from "./NodeHandles";
 import { RotateHandle } from "./RotateHandle";
 import { useCanvasStore } from "../../_store/canvasStore";
 import { updateNodeData } from "../../actions";
-import { evaluateCell, refName, colName, type CellGetter } from "./sheetFormula";
+import { evaluateCellDisplay, refName, colName, SHEET_MAX_ROWS as MAX_ROWS, SHEET_MAX_COLS as MAX_COLS, type CellGetter } from "./sheetFormula";
 import { stripVarTokens, scanText, cellOutput, cellForEval } from "../../../../../lib/variables";
 import { useVariables } from "../VariablesContext";
 
@@ -16,10 +16,8 @@ import { useVariables } from "../VariablesContext";
 // shows COMPUTED values otherwise. Read-only on the public board (canEdit=false).
 type SheetData = { rows?: number; cols?: number; cells?: Record<string, string>; rotation?: number };
 
-const MAX_ROWS = 50, MAX_COLS = 26;
 const clampRows = (n: number) => Math.max(1, Math.min(MAX_ROWS, n));
 const clampCols = (n: number) => Math.max(1, Math.min(MAX_COLS, n));
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1e6) / 1e6));
 
 export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selected }: NodeProps) {
   const d = (data ?? {}) as SheetData;
@@ -36,7 +34,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
   const [draft, setDraft] = useState("");
 
   // Live board-global variable registry — fed to formulas (=Sum($cost), =$cost*1.1, …).
-  const { vars } = useVariables();
+  const { vars, units } = useVariables();
 
   // A named-output cell ("$Name = formula") evaluates AS its formula when referenced by another cell.
   const getRaw = useCallback<CellGetter>((ref) => cellForEval(cells[ref] ?? ""), [cells]);
@@ -55,12 +53,10 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
         const named = cellOutput(raw);
         if (named) {
           // "$Name = formula": show the computed result + flag it (it exports `Name` to the registry).
-          const v = evaluateCell("=" + named.expr, getRaw, vars);
-          out[ref] = typeof v === "number" ? fmt(v) : String(v);
+          out[ref] = evaluateCellDisplay("=" + named.expr, getRaw, vars, units);
           flagged[ref] = true;
         } else if (raw[0] === "=") {
-          const v = evaluateCell(raw, getRaw, vars);
-          out[ref] = typeof v === "number" ? fmt(v) : String(v);
+          out[ref] = evaluateCellDisplay(raw, getRaw, vars, units);
         } else {
           // stripVarTokens swaps each numeric $name(content) token for its content VERBATIM and leaves
           // non-numeric tokens literal (e.g. "$cost(30)" → "30", "$x(free)" → "$x(free)").
@@ -71,7 +67,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
       }
     }
     return { display: out, varCells: flagged };
-  }, [cells, rows, cols, getRaw, vars]);
+  }, [cells, rows, cols, getRaw, vars, units]);
 
   const persist = useCallback(
     (patch: Record<string, unknown>) => {
@@ -108,6 +104,8 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
     >
       <NodeHandles />
       {selected && canEdit && <RotateHandle nodeId={id} />}
+      {/* Clip the grid to the rounded corners here, not on the outer box: its handles and row/col buttons sit outside it. */}
+      <div className="overflow-hidden rounded-[inherit]">
       <table className="border-collapse select-none" style={{ borderSpacing: 0 }}>
         <thead>
           <tr>
@@ -156,6 +154,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
           ))}
         </tbody>
       </table>
+      </div>
       {selected && canEdit && (
         // Row/column add+remove. nodrag + stopPropagation so the pane doesn't treat clicks as pan/drag.
         <div className="nodrag absolute -bottom-7 left-0 flex gap-1 text-[10px]">

@@ -35,7 +35,7 @@ import { CloudNode } from "./nodes/CloudNode";
 import { SpreadsheetNode } from "./nodes/SpreadsheetNode";
 import { TrackerNode } from "./nodes/TrackerNode";
 import { VariablesProvider, useVariables } from "./VariablesContext";
-import { aggregate, renderTrackerLine } from "../../../../lib/variables";
+import { aggregate, formatVar, renderTrackerLine } from "../../../../lib/variables";
 import { AnimatedEdge } from "./edges/AnimatedEdge";
 import { TreeEdge } from "./edges/TreeEdge";
 import { toRFEdge } from "./edges/rfMap";
@@ -2399,7 +2399,7 @@ const hudFmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.rou
 // "Price: $60") when you add any, and auto-lists every variable's aggregates otherwise. Lines are board-UI
 // (not graph data), so they persist in localStorage per board. Positioned left-16 to clear the zoom controls.
 function TrackerHud({ onClose, boardId }: { onClose: () => void; boardId: string }) {
-  const { vars, names } = useVariables();
+  const { vars, units, names } = useVariables();
   const linesKey = `gb-tracker-hud-lines:${boardId}`;
   const [lines, setLines] = useState<string[]>([]);
   const [editingLine, setEditingLine] = useState<number | null>(null);
@@ -2413,7 +2413,8 @@ function TrackerHud({ onClose, boardId }: { onClose: () => void; boardId: string
   }, [linesKey]);
 
   const rows = useMemo(() => names.map((name) => ({ name, agg: aggregate(vars[name] ?? []) })), [names, vars]);
-  const computed = useMemo(() => lines.map((tpl) => ({ tpl, text: renderTrackerLine(tpl, vars) })), [lines, vars]);
+  const computed = useMemo(() => lines.map((tpl) => ({ tpl, text: renderTrackerLine(tpl, vars, units) })), [lines, vars, units]);
+  const show = (n: number, name: string) => (units[name] ? formatVar(n, units[name]) : hudFmt(n));
 
   const addLine = () => { const next = [...lines, ""]; saveLines(next); setDraft(""); setEditingLine(next.length - 1); };
   const removeLine = (i: number) => saveLines(lines.filter((_, j) => j !== i));
@@ -2482,11 +2483,11 @@ function TrackerHud({ onClose, boardId }: { onClose: () => void; boardId: string
               {rows.map(({ name, agg }) => (
                 <tr key={name} className="border-t border-outline-variant/50">
                   <td className="px-1.5 py-1 text-left font-medium text-on-surface">${name}</td>
-                  <td className="px-1 py-1 text-right">{hudFmt(agg.sum)}</td>
-                  <td className="px-1 py-1 text-right">{hudFmt(agg.avg)}</td>
+                  <td className="px-1 py-1 text-right">{show(agg.sum, name)}</td>
+                  <td className="px-1 py-1 text-right">{show(agg.avg, name)}</td>
                   <td className="px-1 py-1 text-right text-on-surface-variant">{agg.count}</td>
-                  <td className="px-1 py-1 text-right text-on-surface-variant">{hudFmt(agg.min)}</td>
-                  <td className="px-1 py-1 text-right text-on-surface-variant">{hudFmt(agg.max)}</td>
+                  <td className="px-1 py-1 text-right text-on-surface-variant">{show(agg.min, name)}</td>
+                  <td className="px-1 py-1 text-right text-on-surface-variant">{show(agg.max, name)}</td>
                 </tr>
               ))}
             </tbody>

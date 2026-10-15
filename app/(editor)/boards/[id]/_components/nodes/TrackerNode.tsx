@@ -12,12 +12,11 @@ import { RotateHandle } from "./RotateHandle";
 import { useCanvasStore } from "../../_store/canvasStore";
 import { updateNodeData } from "../../actions";
 import { useVariables } from "../VariablesContext";
-import { aggregate, renderTrackerLine } from "../../../../../lib/variables";
+import { aggregate, formatVar, renderTrackerLine } from "../../../../../lib/variables";
 
 type TrackerData = { lines?: string[]; title?: string; rotation?: number };
 
 const MAX_LINES = 50;
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1e6) / 1e6));
 
 export const TrackerNode = memo(function TrackerNode({ id, data, selected }: NodeProps) {
   const d = (data ?? {}) as TrackerData;
@@ -28,7 +27,7 @@ export const TrackerNode = memo(function TrackerNode({ id, data, selected }: Nod
   const boardId = useCanvasStore((s) => s.boardId);
   const canEdit = useCanvasStore((s) => s.canEdit);
   const setData = useCanvasStore((s) => s.updateNodeData);
-  const { vars, names } = useVariables();
+  const { vars, units, names } = useVariables();
 
   const [editingLine, setEditingLine] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
@@ -44,8 +43,8 @@ export const TrackerNode = memo(function TrackerNode({ id, data, selected }: Nod
 
   // Each line is a template: literal text + inline-substituted computations, against the live registry.
   const computed = useMemo(
-    () => lines.map((tpl) => ({ tpl, text: renderTrackerLine(tpl, vars) })),
-    [lines, vars],
+    () => lines.map((tpl) => ({ tpl, text: renderTrackerLine(tpl, vars, units) })),
+    [lines, vars, units],
   );
 
   // Auto-list (no custom lines): every board variable with Sum / Avg / Count.
@@ -130,8 +129,8 @@ export const TrackerNode = memo(function TrackerNode({ id, data, selected }: Nod
                   <tr key={name} className="align-baseline">
                     <td className="py-0.5 pr-2 font-medium text-on-surface">${name}</td>
                     <td className="py-0.5 text-right text-on-surface-variant">
-                      <span title="Sum">Σ {fmt(agg.sum)}</span>
-                      <span className="ml-2" title="Average">x̄ {fmt(agg.avg)}</span>
+                      <span title="Sum">Σ {formatVar(agg.sum, units[name])}</span>
+                      <span className="ml-2" title="Average">x̄ {formatVar(agg.avg, units[name])}</span>
                       <span className="ml-2" title="Count">n {agg.count}</span>
                     </td>
                   </tr>

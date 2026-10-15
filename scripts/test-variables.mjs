@@ -1,5 +1,5 @@
 // Self-check for the board-global variable scanner/aggregator. Run: npx tsx scripts/test-variables.mjs
-import { VAR_DEF_RE, parseVarValue, stripVarTokens, scanText, scanVariables, aggregate, evaluateExpr, renderTrackerLine, cellOutput } from "../app/lib/variables.ts";
+import { VAR_DEF_RE, parseVarValue, stripVarTokens, scanText, scanVariables, scanVariablesTyped, aggregate, evaluateExpr, renderTrackerLine, cellOutput, cellForEval } from "../app/lib/variables.ts";
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -18,12 +18,12 @@ eq("parseVarValue free → null", parseVarValue("free"), null);
 eq("parseVarValue empty → null", parseVarValue(""), null);
 
 // VAR_DEF_RE / scanText — content is verbatim; tracked value is the extracted number
-eq("scanText two defs", scanText("price $cost(30) and $cost(20)"), [{ name: "cost", value: 30 }, { name: "cost", value: 20 }]);
-eq("scanText decimal/negative", scanText("$a(2.5) $b(-3)"), [{ name: "a", value: 2.5 }, { name: "b", value: -3 }]);
+eq("scanText two defs", scanText("price $cost(30) and $cost(20)"), [{ name: "cost", value: 30, cur: false }, { name: "cost", value: 20, cur: false }]);
+eq("scanText decimal/negative", scanText("$a(2.5) $b(-3)"), [{ name: "a", value: 2.5, cur: false }, { name: "b", value: -3, cur: false }]);
 eq("scanText none", scanText("plain text"), []);
-eq("scanText non-numeric ignored", scanText("$x(hello) $y(7)"), [{ name: "y", value: 7 }]);
-eq("scanText underscore names", scanText("$_a(1) $b_2(2)"), [{ name: "_a", value: 1 }, { name: "b_2", value: 2 }]);
-eq("scanText verbatim content w/ symbols", scanText("$PricePer($40) $UnitsReq(10)"), [{ name: "PricePer", value: 40 }, { name: "UnitsReq", value: 10 }]);
+eq("scanText non-numeric ignored", scanText("$x(hello) $y(7)"), [{ name: "y", value: 7, cur: false }]);
+eq("scanText underscore names", scanText("$_a(1) $b_2(2)"), [{ name: "_a", value: 1, cur: false }, { name: "b_2", value: 2, cur: false }]);
+eq("scanText verbatim content w/ symbols", scanText("$PricePer($40) $UnitsReq(10)"), [{ name: "PricePer", value: 40, cur: true }, { name: "UnitsReq", value: 10, cur: false }]);
 
 // VAR_DEF_RE is a global regex
 eq("VAR_DEF_RE global flag", VAR_DEF_RE.flags.includes("g"), true);
@@ -88,6 +88,30 @@ eq("cellOutput plain formula is not output", cellOutput("=A1*A2"), null);
   eq("output ProjACost = A1*A2", out.ProjACost, [12]);
   eq("literal cost aggregated", out.cost, [30, 20]);
   eq("output uses literal var: Doubled = Sum(cost)*2", out.Doubled, [100]);
+}
+
+// cellForEval: a value cell reads as what it displays, so formulas can use it
+eq("cellForEval strips var token", cellForEval("$cost(30)"), "30");
+eq("cellForEval keeps formulas", cellForEval("=A1*2"), "=A1*2");
+eq("cellForEval named output", cellForEval("$Pay = A1*2"), "=A1*2");
+
+// --- variables carrying the currency unit ---
+{
+  const nodes = [
+    { type: "text", data: { text: "Rate $rate($20), qty $qty(3)" } },
+    { type: "spreadsheet", data: { cells: { A1: "11:15 PM", B1: "1:15 AM", C1: "$Pay = $rate*(B1-A1)", D1: "$Hours = B1-A1" } } },
+  ];
+  const { vars, units } = scanVariablesTyped(nodes);
+  eq("money def → cur", units.rate, "cur");
+  eq("plain def → no unit", units.qty, undefined);
+  eq("named output money", [vars.Pay, units.Pay], [[40], "cur"]);
+  eq("named output duration", [vars.Hours, units.Hours], [[2], "dur"]);
+  eq("scanVariables unchanged shape", scanVariables(nodes).rate, [20]);
+  eq("tracker $-prefixed money stays bare", renderTrackerLine("Pay: $sum(Pay)", vars, units), "Pay: $40");
+  eq("tracker unprefixed money formats", renderTrackerLine("Pay: sum(Pay)", vars, units), "Pay: $40.00");
+  eq("tracker brace money", renderTrackerLine("Total {$rate*$qty}", vars, units), "Total $60.00");
+  eq("tracker duration", renderTrackerLine("Shift: sum(Hours)", vars, units), "Shift: 2 hours");
+  eq("tracker count stays plain", renderTrackerLine("count(Pay) paid", vars, units), "1 paid");
 }
 
 console.log(`\nvariables — ${pass} passed, ${fail} failed`);

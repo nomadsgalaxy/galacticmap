@@ -5,12 +5,12 @@
 // React-free app/lib/variables.ts so server route handlers share the same implementation.
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { scanVariables, type VarMap } from "../../../../lib/variables";
+import { scanVariablesTyped, type VarMap, type VarUnits } from "../../../../lib/variables";
 
-type VariablesValue = { vars: VarMap; names: string[] };
+type VariablesValue = { vars: VarMap; units: VarUnits; names: string[] };
 
 // SAFE empty default so a node consuming the hook never crashes before the provider is wired.
-const EMPTY: VariablesValue = { vars: {}, names: [] };
+const EMPTY: VariablesValue = { vars: {}, units: {}, names: [] };
 
 const VariablesContext = createContext<VariablesValue>(EMPTY);
 
@@ -19,8 +19,8 @@ type ScannableNode = { type?: string; data?: Record<string, unknown> };
 
 export function VariablesProvider({ nodes, children }: { nodes: ScannableNode[]; children: ReactNode }) {
   const value = useMemo<VariablesValue>(() => {
-    const vars = scanVariables(nodes);
-    return { vars, names: Object.keys(vars) };
+    const { vars, units } = scanVariablesTyped(nodes);
+    return { vars, units, names: Object.keys(vars) };
   }, [nodes]);
   return <VariablesContext.Provider value={value}>{children}</VariablesContext.Provider>;
 }

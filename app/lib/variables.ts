@@ -20,9 +20,9 @@
 // REFERENCE syntax ($name, Sum/Avg/Min/Max/Count($name)) lives in sheetFormula.ts and is shared via
 // evaluateExpr below, so server-side aggregation and the tracker node use ONE implementation.
 
-import { evaluateExpr as evalExprImpl, evaluateCell, type VarMap, type CellGetter } from "../(editor)/boards/[id]/_components/nodes/sheetFormula";
+import { evaluateExpr as evalExprImpl, evalTyped, formatValue, parseLiteral, type VarMap, type VarUnits, type Unit, type CellGetter } from "../(editor)/boards/[id]/_components/nodes/sheetFormula";
 
-export type { VarMap };
+export type { VarMap, VarUnits };
 
 // A spreadsheet cell can NAME its computed result as a board variable:  "$Name = <formula>"  — the cell
 // shows the formula's result AND exports `Name` to the registry. Distinct from "$cost(30)" (a literal
@@ -34,10 +34,11 @@ export function cellOutput(raw: unknown): { name: string; expr: string } | null 
   return m ? { name: m[1], expr: m[2].trim() } : null;
 }
 // Normalize a raw cell for FORMULA evaluation: a named-output cell evaluates AS its formula (so other
-// cells referencing it by ref compute its value); every other cell passes through unchanged.
+// cells referencing it by ref compute its value), and a value cell reads as what it displays
+// ("$cost(30)" → "30"), so =A1*2 works on it.
 export function cellForEval(raw: string): string {
   const o = cellOutput(raw);
-  return o ? "=" + o.expr : raw;
+  return o ? "=" + o.expr : raw.trimStart().startsWith("=") ? raw : stripVarTokens(raw);
 }
 
 // GLOBAL regex matching one $name(content) token. Group 1 = name, group 2 = RAW content (no parens).
@@ -65,14 +66,15 @@ export function stripVarTokens(text: string): string {
 
 // All variable tokens found in a single string, in order of appearance. Only tokens whose content
 // yields a number are returned; value = parseVarValue(content).
-export function scanText(text: string): { name: string; value: number }[] {
-  const out: { name: string; value: number }[] = [];
+// `cur` marks money content ($rate($20) → true), so the variable carries the currency unit.
+export function scanText(text: string): { name: string; value: number; cur: boolean }[] {
+  const out: { name: string; value: number; cur: boolean }[] = [];
   if (!text) return out;
   // Construct a per-call regex (VAR_DEF_RE is global/stateful) so matchAll starts from a fresh lastIndex.
   const re = new RegExp(VAR_DEF_RE.source, "g");
   for (const m of text.matchAll(re)) {
     const value = parseVarValue(m[2]);
-    if (value !== null) out.push({ name: m[1], value });
+    if (value !== null) out.push({ name: m[1], value, cur: parseLiteral(m[2])?.u === "cur" });
   }
   return out;
 }
@@ -92,13 +94,21 @@ type ScannableNode = {
 // Board-wide variable registry: scan text nodes (data.text), spreadsheet cells (data.cells values), AND
 // every node's data.varText (any node type), aggregating every variable token into { name: number[] }.
 export function scanVariables(nodes: ScannableNode[] | null | undefined): VarMap {
+  return scanVariablesTyped(nodes).vars;
+}
+
+// Same scan, plus each variable's unit: "cur" when a definition holds money ($rate($20)), or the unit
+// of a named-output cell's result ($Total = $20*D2 → "cur"). A name takes the first unit seen.
+export function scanVariablesTyped(nodes: ScannableNode[] | null | undefined): { vars: VarMap; units: VarUnits } {
   const vars: VarMap = {};
-  if (!nodes) return vars;
+  const units: VarUnits = {};
+  if (!nodes) return { vars, units };
   // Pass 1 — literal $name(value) tokens from text, varText, and spreadsheet cell values → base registry.
   const add = (raw: unknown) => {
     if (typeof raw !== "string") return;
-    for (const { name, value } of scanText(raw)) {
+    for (const { name, value, cur } of scanText(raw)) {
       (vars[name] ??= []).push(value);
+      if (cur) units[name] ??= "cur";
     }
   };
   for (const node of nodes) {
@@ -115,6 +125,7 @@ export function scanVariables(nodes: ScannableNode[] | null | undefined): VarMap
   // against the node's own grid + the pass-1 literal registry (`base`); output vars don't feed each
   // other (one level — avoids cross-output cycles). The result aggregates like any variable.
   const base: VarMap = { ...vars };
+  const baseUnits: VarUnits = { ...units };
   for (const node of nodes) {
     if (node?.type !== "spreadsheet") continue;
     const cells = node.data?.cells;
@@ -124,11 +135,19 @@ export function scanVariables(nodes: ScannableNode[] | null | undefined): VarMap
     for (const raw of Object.values(c)) {
       const o = cellOutput(raw);
       if (!o) continue;
-      const v = evaluateCell("=" + o.expr, get, base);
-      if (typeof v === "number" && Number.isFinite(v)) (vars[o.name] ??= []).push(v);
+      const v = evalTyped(o.expr, get, base, baseUnits);
+      if (typeof v === "string" || !Number.isFinite(v.n)) continue;
+      (vars[o.name] ??= []).push(v.n);
+      if (v.u) units[o.name] ??= v.u;
     }
   }
-  return vars;
+  return { vars, units };
+}
+
+// A variable's number for display: "$40.00" for money, "2 hours" for a duration, else plain. After a
+// literal "$" in a template ("Price: $sum(cost)") money stays a bare number so it doesn't print "$$".
+export function formatVar(n: number, u: Unit = "", afterDollar = false): string {
+  return !u || (u === "cur" && afterDollar) ? fmtNum(n) : formatValue({ n, u });
 }
 
 // Aggregate a list of values. Empty list → all zeros (avg of empty = 0).
@@ -156,21 +175,22 @@ const fmtNum = (n: number): string => (Number.isInteger(n) ? String(n) : String(
 //     or "{$cost*1.1}"), for arithmetic across variables.
 // Everything else (incl. a literal "$") is left untouched.
 const TRACKER_AGG_RE = /\b(sum|avg|average|min|max|count)\s*\(\s*\$?([A-Za-z_][A-Za-z0-9_]*)\s*\)/gi;
-export function renderTrackerLine(line: string, vars: VarMap = {}): string {
+export function renderTrackerLine(line: string, vars: VarMap = {}, units: VarUnits = {}): string {
   if (!line) return "";
   // 1) { expr } blocks → the full expression engine ($name refs + arithmetic).
-  let out = line.replace(/\{([^{}]+)\}/g, (_m, expr: string) => {
-    const v = evaluateExpr(expr.trim(), vars);
-    return typeof v === "number" ? fmtNum(v) : String(v);
+  let out = line.replace(/\{([^{}]+)\}/g, (_m, expr: string, at: number, s: string) => {
+    const v = evalTyped(expr.trim().replace(/^=/, ""), () => "", vars, units);
+    return typeof v === "string" ? v : formatVar(v.n, v.u, s[at - 1] === "$");
   });
   // 2) bare aggregate calls → the named variable's aggregate.
-  out = out.replace(TRACKER_AGG_RE, (_m, fn: string, name: string) => {
+  out = out.replace(TRACKER_AGG_RE, (_m, fn: string, name: string, at: number, s: string) => {
     const a = aggregate(vars[name] ?? []);
+    const show = (n: number) => formatVar(n, units[name], s[at - 1] === "$");
     switch (fn.toLowerCase()) {
-      case "sum": return fmtNum(a.sum);
-      case "avg": case "average": return fmtNum(a.avg);
-      case "min": return fmtNum(a.min);
-      case "max": return fmtNum(a.max);
+      case "sum": return show(a.sum);
+      case "avg": case "average": return show(a.avg);
+      case "min": return show(a.min);
+      case "max": return show(a.max);
       default: return fmtNum(a.count); // count
     }
   });
