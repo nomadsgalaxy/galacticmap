@@ -1,5 +1,6 @@
 // Self-check for the spreadsheet formula evaluator. Run: npx tsx scripts/test-sheetformula.mjs
-import { evaluateCell, evaluateCellDisplay, evaluateExpr, parseLiteral, parseRef, refName, colName } from "../app/(editor)/boards/[id]/_components/nodes/sheetFormula.ts";
+import { evaluateCell, evaluateCellDisplay, evaluateExpr, parseLiteral, parseRef, refName, colName, functionNames } from "../app/(editor)/boards/[id]/_components/nodes/sheetFormula.ts";
+import { FUNCTION_DOCS, typingAt, callAt, suggestFunctions, suggestVariables, splitArgs, argIndex } from "../app/(editor)/boards/[id]/_components/nodes/sheetFunctions.ts";
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -286,6 +287,37 @@ eq("$rate × duration", evaluateCellDisplay("=$rate*D2", gs, rv, units), "$40.00
 eq("Sum($rate) keeps $", evaluateCellDisplay("=SUM($rate)*2", gs, rv, units), "$40.00");
 eq("untyped var stays plain", evaluateCellDisplay("=$cost*D2", gs, rv, units), "180 hours");
 eq("evaluateExpr typed var", evaluateExpr("$rate*3", rv, units), 60);
+
+// --- autocomplete ---
+const engine = new Set(functionNames()), documented = new Set(FUNCTION_DOCS.map((d) => d.name));
+eq("every engine function is documented", [...engine].filter((n) => !documented.has(n)).join(","), "");
+eq("every documented function exists", [...documented].filter((n) => !engine.has(n)).join(","), "");
+const at = (s) => typingAt(s, s.length);
+eq("typing fn prefix", JSON.stringify(at("=SU")), JSON.stringify({ kind: "fn", prefix: "SU", start: 1 }));
+eq("typing fn after operator", JSON.stringify(at("=A1+vl")), JSON.stringify({ kind: "fn", prefix: "vl", start: 4 }));
+eq("typing fn inside call", at("=IF(cou")?.prefix, "cou");
+eq("no suggestions for a cell ref", at("=A1"), null);
+eq("no suggestions outside formulas", at("SU"), null);
+eq("no suggestions inside a string", at('=IF(A1="su'), null);
+eq("typing var", JSON.stringify(at("=$co")), JSON.stringify({ kind: "var", prefix: "co", start: 1 }));
+eq("bare $ lists vars", at("=2*$")?.kind, "var");
+eq("money literal isn't a var", at("=$2"), null);
+eq("named output cell gets suggestions", at("$Pay = SU")?.prefix, "SU");
+eq("not while naming the output", at("$Pa"), null);
+eq("caret mid-text", typingAt("=SUM(A1)+MA", 4)?.prefix, "SUM");
+eq("SUM ranks first", suggestFunctions("S")[0].name, "SUM");
+eq("SU suggestions", suggestFunctions("su").map((d) => d.name).slice(0, 3).join(","), "SUM,SUMIF,SUBSTITUTE");
+eq("exact name not re-suggested", suggestFunctions("SUM").some((d) => d.name === "SUM"), false);
+eq("suggest vars", suggestVariables("c", ["cost", "Count", "rate"]).join(","), "Count,cost");
+eq("callAt first arg", JSON.stringify(callAt("=IF(", 4)), JSON.stringify({ name: "IF", arg: 0 }));
+eq("callAt second arg", callAt("=IF(A1>2, ", 10)?.arg, 1);
+eq("callAt nested", callAt("=IF(SUM(A1,", 11)?.name, "SUM");
+eq("callAt after close", callAt("=IF(SUM(A1), ", 13)?.name, "IF");
+eq("callAt ignores commas in strings", callAt('=IF("a,b", ', 11)?.arg, 1);
+eq("callAt none", callAt("=A1+", 4), null);
+eq("splitArgs brackets", splitArgs("value1, [value2, …]").join("|"), "value1|[value2, …]");
+eq("argIndex repeats", argIndex(splitArgs("value1, [value2, …]"), 5), 1);
+eq("argIndex past fixed args", argIndex(splitArgs("number, digits"), 3), -1);
 
 console.log(`\nsheetFormula — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

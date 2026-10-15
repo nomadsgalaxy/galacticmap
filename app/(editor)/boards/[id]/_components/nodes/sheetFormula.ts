@@ -1130,6 +1130,9 @@ def("IRR", (a) => {
   return res(newton((r) => xs.reduce((s, x, i) => s + x / pow1(r, i), 0), nv(a, 1, 0.1)));
 });
 
+// Every function name the engine knows (sheetFunctions' autocomplete list is checked against this).
+export const functionNames = (): string[] => Object.keys(FN);
+
 // ── Entry points ─────────────────────────────────────────────────────────────────────────────────────
 function literal(raw: string): V {
   const up = raw.trim().toUpperCase();

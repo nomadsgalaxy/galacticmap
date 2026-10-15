@@ -1,17 +1,21 @@
 "use client";
 
-import { memo, useCallback, useMemo, useState, type CSSProperties } from "react";
+import { memo, useCallback, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { type NodeProps } from "@xyflow/react";
 import { NodeHandles } from "./NodeHandles";
 import { RotateHandle } from "./RotateHandle";
 import { useCanvasStore } from "../../_store/canvasStore";
 import { updateNodeData } from "../../actions";
 import { evaluateCellDisplay, refName, colName, SHEET_MAX_ROWS as MAX_ROWS, SHEET_MAX_COLS as MAX_COLS, type CellGetter } from "./sheetFormula";
-import { stripVarTokens, scanText, cellOutput, cellForEval } from "../../../../../lib/variables";
+import { stripVarTokens, scanText, cellOutput, cellForEval, aggregate, formatVar } from "../../../../../lib/variables";
 import { useVariables } from "../VariablesContext";
+import { typingAt, callAt, suggestFunctions, suggestVariables, fnDoc, splitArgs, argIndex } from "./sheetFunctions";
+
+type Option = { label: string; insert: string; detail: string };
 
 // A small editable spreadsheet: tabulate data + run calculations. Cells hold text, numbers, or "="
-// formulas (cell refs, arithmetic, SUM/AVERAGE/MIN/MAX/COUNT — see sheetFormula). Stored in node.data as
+// formulas (Excel-compatible — see sheetFormula; autocomplete comes from sheetFunctions). Stored in node.data as
 // { rows, cols, cells: { A1: rawString, ... } }. Double-click a cell to edit its RAW value; the grid
 // shows COMPUTED values otherwise. Read-only on the public board (canEdit=false).
 type SheetData = { rows?: number; cols?: number; cells?: Record<string, string>; rotation?: number };
@@ -34,7 +38,45 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
   const [draft, setDraft] = useState("");
 
   // Live board-global variable registry — fed to formulas (=Sum($cost), =$cost*1.1, …).
-  const { vars, units } = useVariables();
+  const { vars, units, names } = useVariables();
+
+  // Formula autocomplete: function names (with their arguments) and $variables as you type, then a hint
+  // for the arguments of the function the caret is inside. The popup is portalled to the page and placed
+  // under the cell on screen, so it stays readable at any canvas zoom.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+  const [caret, setCaret] = useState(0);
+  const [pick, setPick] = useState(0);
+  const [dismissed, setDismissed] = useState(false); // Escape hides the list until the next keystroke
+  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+  const placeUnder = (el: Element | null | undefined) => {
+    const r = el?.getBoundingClientRect();
+    setAnchor(r ? { left: r.left, top: r.bottom + 4 } : null);
+  };
+  const typing = editing ? typingAt(draft, caret) : null;
+  const options: Option[] =
+    typing?.kind === "fn"
+      ? suggestFunctions(typing.prefix).map((f) => ({ label: `${f.name}(${f.args})`, insert: `${f.name}(`, detail: f.desc }))
+      : typing?.kind === "var"
+        ? suggestVariables(typing.prefix, names).map((n) => ({
+            label: `$${n}`, insert: `$${n}`,
+            detail: `${formatVar(aggregate(vars[n] ?? []).sum, units[n])}${(vars[n]?.length ?? 0) > 1 ? ` (sum of ${vars[n].length})` : ""}`,
+          }))
+        : [];
+  const listOpen = !dismissed && options.length > 0;
+  const call = editing && !listOpen ? callAt(draft, caret) : null;
+  const callDoc = call ? fnDoc(call.name) : undefined;
+
+  const accept = (o: Option) => {
+    if (!typing) return;
+    const insert = o.insert.endsWith("(") && draft[caret] === "(" ? o.insert.slice(0, -1) : o.insert;
+    const next = draft.slice(0, typing.start) + insert + draft.slice(caret);
+    const pos = typing.start + insert.length;
+    setDraft(next);
+    setCaret(pos);
+    setPick(0);
+    requestAnimationFrame(() => inputRef.current?.setSelectionRange(pos, pos));
+  };
 
   // A named-output cell ("$Name = formula") evaluates AS its formula when referenced by another cell.
   const getRaw = useCallback<CellGetter>((ref) => cellForEval(cells[ref] ?? ""), [cells]);
@@ -87,9 +129,14 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
     persist({ cells: next });
   };
 
-  const beginEdit = (ref: string) => {
+  const beginEdit = (ref: string, cell?: HTMLElement | null) => {
     if (!canEdit) return;
-    setDraft(cells[ref] ?? "");
+    const raw = cells[ref] ?? "";
+    setDraft(raw);
+    setCaret(raw.length);
+    setPick(0);
+    setDismissed(false);
+    placeUnder(cell);
     setEditing(ref);
   };
 
@@ -127,13 +174,30 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                   <td key={c} className={`${cellBase} p-0`}>
                     {isEditing ? (
                       <input
+                        ref={inputRef}
                         autoFocus
                         className="nodrag h-full w-full bg-primary/5 px-1 text-xs text-on-surface outline-none"
                         value={draft}
                         spellCheck={false}
-                        onChange={(e) => setDraft(e.target.value)}
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={listOpen}
+                        aria-controls={listOpen ? listId : undefined}
+                        aria-activedescendant={listOpen ? `${listId}-${pick}` : undefined}
+                        onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); setDismissed(false); setPick(0); placeUnder(e.target); }}
+                        onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
                         onBlur={() => commit(ref)}
                         onKeyDown={(e) => {
+                          if (listOpen) {
+                            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                              e.preventDefault();
+                              const step = e.key === "ArrowDown" ? 1 : -1;
+                              setPick((p) => (p + step + options.length) % options.length);
+                              return;
+                            }
+                            if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); accept(options[Math.min(pick, options.length - 1)]); return; }
+                            if (e.key === "Escape") { e.preventDefault(); setDismissed(true); return; }
+                          }
                           if (e.key === "Enter") { e.preventDefault(); commit(ref); }
                           else if (e.key === "Escape") { e.preventDefault(); setEditing(null); }
                         }}
@@ -142,7 +206,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                       <div
                         className={`nodrag h-full w-full cursor-text overflow-hidden whitespace-nowrap px-1 leading-[22px]${varCells[ref] ? " gb-var" : ""}`}
                         title={cells[ref] && cells[ref] !== display[ref] ? cells[ref] : undefined}
-                        onDoubleClick={() => beginEdit(ref)}
+                        onDoubleClick={(e) => beginEdit(ref, e.currentTarget.parentElement)}
                       >
                         {display[ref] ?? ""}
                       </div>
@@ -155,6 +219,48 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
         </tbody>
       </table>
       </div>
+      {editing && anchor && (listOpen || callDoc) && createPortal(
+        // mousedown is swallowed so clicking an option doesn't blur (and commit) the cell.
+        <div
+          className="fixed z-[1000] w-max min-w-[220px] max-w-[340px] overflow-hidden rounded-control border border-outline-variant bg-surface-container text-xs text-on-surface shadow-elev-2"
+          style={{ left: anchor.left, top: anchor.top }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {listOpen ? (
+            <ul id={listId} role="listbox" className="py-1">
+              {options.map((o, i) => (
+                <li
+                  key={o.label}
+                  id={`${listId}-${i}`}
+                  role="option"
+                  aria-selected={i === pick}
+                  className={`cursor-pointer px-2 py-1 ${i === pick ? "bg-primary/10" : ""}`}
+                  onMouseEnter={() => setPick(i)}
+                  onClick={() => accept(o)}
+                >
+                  <div className="truncate font-mono text-[11px]">{o.label}</div>
+                  {o.detail && <div className="truncate text-[10px] text-on-surface-variant">{o.detail}</div>}
+                </li>
+              ))}
+            </ul>
+          ) : callDoc && call ? (
+            <div className="px-2 py-1.5" role="tooltip">
+              <div className="font-mono text-[11px]">
+                {callDoc.name}(
+                {splitArgs(callDoc.args).map((a, i, all) => (
+                  <span key={i}>
+                    <span className={i === argIndex(all, call.arg) ? "font-semibold text-primary" : "text-on-surface-variant"}>{a}</span>
+                    {i < all.length - 1 ? ", " : ""}
+                  </span>
+                ))}
+                )
+              </div>
+              <div className="text-[10px] text-on-surface-variant">{callDoc.desc}</div>
+            </div>
+          ) : null}
+        </div>,
+        document.body,
+      )}
       {selected && canEdit && (
         // Row/column add+remove. nodrag + stopPropagation so the pane doesn't treat clicks as pan/drag.
         <div className="nodrag absolute -bottom-7 left-0 flex gap-1 text-[10px]">

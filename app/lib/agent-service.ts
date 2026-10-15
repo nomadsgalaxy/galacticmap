@@ -327,7 +327,7 @@ export async function applyChanges(principal: ApiPrincipal, boardId: string, raw
   }
 
   if (!set.dryRun) {
-    revalidateTag(tags.board(boardId), "max");
+    revalidateTag(tags.board(boardId), { expire: 0 });
     announceGraph(boardId, {
       nodes: result.nodes, edges: result.edges, groups: result.groups,
       deletedNodeIds: result.deleted.nodes, deletedEdgeIds: result.deleted.edges, deletedGroupIds: result.deleted.groups, by,
@@ -393,7 +393,7 @@ async function propose(principal: ApiPrincipal, boardId: string, ops: ChangeOp[]
     data: { shareId: share.id, status: "PENDING", payloadVersion: 2, authorName: by, payload: proposal as unknown as Prisma.InputJsonValue },
     select: { id: true },
   });
-  revalidateTag(tags.suggestions(boardId), "max");
+  revalidateTag(tags.suggestions(boardId), { expire: 0 });
   publishLive(boardId, JSON.stringify({ type: "sug", op: "upsert", suggestion: { id: sug.id, authorName: by, payload: proposal } }));
   return { ...result, suggestionId: sug.id };
 }

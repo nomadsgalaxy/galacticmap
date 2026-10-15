@@ -14,8 +14,10 @@ import { publishLive } from "@/app/lib/live-bus";
 // same authority path as the editor — authorize()/GRANTS, parseNodeData(), cache tags — so the
 // public API can never do anything the RBAC layer wouldn't allow in the UI. The editor's own
 // "use server" actions keep their updateTag() read-your-writes semantics; route handlers use
-// revalidateTag(tag,'max') (stale-while-revalidate) per Next 16, so the two paths invalidate
-// the same tags but with the invalidation primitive correct for each caller.
+// revalidateTag(tag, { expire: 0 }) per Next 16, so the two paths invalidate the same tags with the
+// primitive correct for each caller. Board writes expire immediately rather than stale-while-revalidate:
+// an editor that loads a stale board and later saves it (undo does a full-graph save) would delete
+// whatever an agent just added.
 
 /** Typed error carrying an HTTP status so route handlers can map cleanly. */
 export class ApiError extends Error {
@@ -177,7 +179,7 @@ export async function createNodeSvc(principal: Principal, boardId: string, input
       data: clean as Prisma.InputJsonValue,
     },
   });
-  revalidateTag(tags.board(boardId), "max");
+  revalidateTag(tags.board(boardId), { expire: 0 });
   const out = serializeNode(node);
   announceGraph(boardId, { nodes: [out] });
   return out;
@@ -221,7 +223,7 @@ export async function updateNodeSvc(
     patch.parent = input.parentId ? { connect: { id: input.parentId } } : { disconnect: true };
   }
   const updated = await prisma.node.update({ where: { id: nodeId }, data: patch });
-  revalidateTag(tags.board(boardId), "max");
+  revalidateTag(tags.board(boardId), { expire: 0 });
   const out = serializeNode(updated);
   announceGraph(boardId, { nodes: [out] });
   return out;
@@ -231,7 +233,7 @@ export async function deleteNodeSvc(principal: Principal, boardId: string, nodeI
   await gate(principal, boardId, "node:delete");
   const res = await prisma.node.deleteMany({ where: { id: nodeId, boardId } });
   if (res.count === 0) throw new ApiError(404, "Node not found", "not_found");
-  revalidateTag(tags.board(boardId), "max");
+  revalidateTag(tags.board(boardId), { expire: 0 });
   announceGraph(boardId, { deletedNodeIds: [nodeId] });
 }
 
@@ -253,7 +255,7 @@ export async function createEdgeSvc(principal: Principal, boardId: string, input
       label: input.label ? input.label.slice(0, 120) : null,
     },
   });
-  revalidateTag(tags.board(boardId), "max");
+  revalidateTag(tags.board(boardId), { expire: 0 });
   const out = serializeEdge(edge);
   announceGraph(boardId, { edges: [out] });
   return out;
@@ -263,6 +265,6 @@ export async function deleteEdgeSvc(principal: Principal, boardId: string, edgeI
   await gate(principal, boardId, "node:delete");
   const res = await prisma.edge.deleteMany({ where: { id: edgeId, boardId } });
   if (res.count === 0) throw new ApiError(404, "Edge not found", "not_found");
-  revalidateTag(tags.board(boardId), "max");
+  revalidateTag(tags.board(boardId), { expire: 0 });
   announceGraph(boardId, { deletedEdgeIds: [edgeId] });
 }
