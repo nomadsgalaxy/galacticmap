@@ -45,6 +45,13 @@ Optional integrations (GitHub/GitLab OAuth, an Anthropic API key for the AI feat
 
 For production: `npm run build` then `npm run start`. Uploaded images and the SQLite database both live under `data/` — back up that one folder.
 
+## Docs
+
+- [`docs/architecture.md`](docs/architecture.md): how the code is laid out.
+- [`deploy/README.md`](deploy/README.md): the GitHub auto-update timer.
+- [`docs/connector-routing.md`](docs/connector-routing.md): the connector router spec.
+- `plan.md` / `log.md`: the original spec and the build log.
+
 ## License
 
 Galactic Map is released under the **Open Community License v1.1** with the **SWAtt v1** (software attribution) and **Micro v1** (micro-business) add-on conditions — see [`LICENSE`](./LICENSE) and the [`NOTICE`](./NOTICE) summary.
