@@ -185,7 +185,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
       <NodeHandles />
       {selected && canEdit && <RotateHandle nodeId={id} />}
       {/* Clip the grid to the rounded corners here, not on the outer box: its handles and row/col buttons sit outside it. */}
-      <div className="overflow-hidden rounded-[inherit]">
+      <div className="overflow-hidden rounded-[inherit] font-mono">
       <table className="border-collapse select-none" style={{ borderSpacing: 0 }}>
         <thead>
           <tr>
