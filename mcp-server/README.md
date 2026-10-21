@@ -19,14 +19,14 @@ an MCP client can never do more than the token's user is allowed to do.
     "command": "node",
     "args": ["/absolute/path/to/GalacticBoard/mcp-server/index.mjs"],
     "env": {
-      "GALACTICBOARD_URL": "http://localhost:3000",
+      "GALACTICBOARD_URL": "https://chart.galacticmap.app",
       "GALACTICBOARD_TOKEN": "gbk_your_token_here"
     }
   }
 }
 ```
 
-`GALACTICBOARD_URL` defaults to `http://localhost:3000` if omitted. `GALACTICBOARD_TOKEN` is
+Use your own instance's address for `GALACTICBOARD_URL`. It defaults to `http://localhost:3000` (a local dev server) if omitted. `GALACTICBOARD_TOKEN` is
 required.
 
 ## Tools

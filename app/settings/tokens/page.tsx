@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { listApiTokens } from "@/app/lib/token-actions";
 import { TokenManager } from "./TokenManager";
@@ -16,33 +17,9 @@ export default function TokensPage() {
         <Loader />
       </Suspense>
 
-      <section className="mt-10 rounded-panel border border-outline-variant bg-surface-container p-4">
-        <h2 className="mb-2 text-sm font-semibold text-on-surface">Quick start</h2>
-        <pre className="overflow-x-auto rounded-control bg-surface-variant p-3 text-xs text-on-surface">
-{`# Verify a token
-curl -s http://localhost:3000/api/v1/me \\
-  -H "Authorization: Bearer $GB_TOKEN"
-
-# List boards
-curl -s http://localhost:3000/api/v1/boards \\
-  -H "Authorization: Bearer $GB_TOKEN"
-
-# Create a board, then add a node
-curl -s -X POST http://localhost:3000/api/v1/boards \\
-  -H "Authorization: Bearer $GB_TOKEN" -H "Content-Type: application/json" \\
-  -d '{"title":"From the API"}'
-
-curl -s -X POST http://localhost:3000/api/v1/boards/<id>/nodes \\
-  -H "Authorization: Bearer $GB_TOKEN" -H "Content-Type: application/json" \\
-  -d '{"type":"text","x":0,"y":0,"data":{"text":"# Hello from curl"}}'`}
-        </pre>
-        <p className="mt-3 text-xs text-on-surface-variant">
-          MCP: point your client at <code className="rounded bg-surface-variant px-1 py-0.5">mcp-server/index.mjs</code> with
-          {" "}<code className="rounded bg-surface-variant px-1 py-0.5">GALACTICBOARD_URL</code> and{" "}
-          <code className="rounded bg-surface-variant px-1 py-0.5">GALACTICBOARD_TOKEN</code> set. See{" "}
-          <code className="rounded bg-surface-variant px-1 py-0.5">mcp-server/README.md</code>.
-        </p>
-      </section>
+      <Suspense>
+        <QuickStart />
+      </Suspense>
     </main>
   );
 }
@@ -50,4 +27,41 @@ curl -s -X POST http://localhost:3000/api/v1/boards/<id>/nodes \\
 async function Loader() {
   const tokens = await listApiTokens();
   return <TokenManager initial={tokens} />;
+}
+
+async function QuickStart() {
+  // Show this instance's own address, so hosted and self-hosted users both get a URL that works.
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const origin = `${proto}://${host}`;
+  return (
+    <section className="mt-10 rounded-panel border border-outline-variant bg-surface-container p-4">
+      <h2 className="mb-2 text-sm font-semibold text-on-surface">Quick start</h2>
+      <pre className="overflow-x-auto rounded-control bg-surface-variant p-3 text-xs text-on-surface">
+{`# Verify a token
+curl -s ${origin}/api/v1/me \\
+  -H "Authorization: Bearer $GB_TOKEN"
+
+# List boards
+curl -s ${origin}/api/v1/boards \\
+  -H "Authorization: Bearer $GB_TOKEN"
+
+# Create a board, then add a node
+curl -s -X POST ${origin}/api/v1/boards \\
+  -H "Authorization: Bearer $GB_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"title":"From the API"}'
+
+curl -s -X POST ${origin}/api/v1/boards/<id>/nodes \\
+  -H "Authorization: Bearer $GB_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"type":"text","x":0,"y":0,"data":{"text":"# Hello from curl"}}'`}
+      </pre>
+      <p className="mt-3 text-xs text-on-surface-variant">
+        MCP: the server runs on your machine (stdio). Point your client at <code className="rounded bg-surface-variant px-1 py-0.5">mcp-server/index.mjs</code> with
+        {" "}<code className="rounded bg-surface-variant px-1 py-0.5">GALACTICBOARD_URL</code> set to <code className="rounded bg-surface-variant px-1 py-0.5">{origin}</code> and{" "}
+        <code className="rounded bg-surface-variant px-1 py-0.5">GALACTICBOARD_TOKEN</code> set. See{" "}
+        <code className="rounded bg-surface-variant px-1 py-0.5">mcp-server/README.md</code>.
+      </p>
+    </section>
+  );
 }
