@@ -57,6 +57,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       status: 200,
       headers: {
         "Content-Type": asset.mimeType,
+        // Never let a browser second-guess the type: an upload stored as an image must only ever render as one.
+        "X-Content-Type-Options": "nosniff",
         // An asset id maps to immutable bytes (each upload is a NEW id), so cache hard. Private (member)
         // assets cache per-user in the browser for a year. Public assets are shareable/CDN-cacheable, but
         // capped at a day so unpublishing a board revokes edge-cached images within ~24h.
