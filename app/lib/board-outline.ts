@@ -24,7 +24,7 @@ function content(n: SnapshotNode, ctx: Ctx): string {
     case "text": return `"${clip(plain(str(d.text)), 160)}"`;
     case "swatch": return `color ${str(d.hex) || "?"}`;
     case "link": return [str(d.title) && `"${clip(str(d.title), 80)}"`, str(d.url)].filter(Boolean).join(" ") || "(empty link)";
-    case "image": return str(d.alt) ? `"${clip(str(d.alt), 120)}"` : "(no description)";
+    case "image": return str(d.alt) ? `"${clip(str(d.alt), 120)}"` : "(no alt text; view_image shows it)";
     case "tracker": {
       const lines = Array.isArray(d.lines) ? (d.lines as string[]) : [];
       const shown = lines.slice(0, 6).map((l) => renderTrackerLine(l, ctx.vars, ctx.units)).join(" | ");

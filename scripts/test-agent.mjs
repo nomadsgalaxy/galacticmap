@@ -1,6 +1,7 @@
 // Self-check for agent placement + the board outline. Run: npx tsx scripts/test-agent.mjs
 import { findSpot, sizeOf, rectOf, union, clusters } from "../app/lib/board-layout.ts";
 import { outlineText } from "../app/lib/board-outline.ts";
+import { snapshotSvg } from "../app/lib/board-snapshot.ts";
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -74,6 +75,18 @@ ok("outline ungrouped area heading", text.includes("## Ungrouped area around (30
 const short = outlineText(board, 300);
 ok("outline respects budget", short.length <= 400 && short.includes("truncated"));
 ok("empty board", outlineText({ ...board, nodes: [], edges: [], groups: [] }).includes("(This board is empty.)"));
+
+// --- snapshot picture ---
+const snap = snapshotSvg({ ...board, nodes: [...board.nodes, { id: "img", type: "image", parentId: null, x: 900, y: 0, width: 200, height: 100, data: { assetId: "a1", alt: "<b>" } }] }, { images: new Map([["a1", "data:image/jpeg;base64,AAAA"]]), width: 800 });
+ok("snapshot is an 800px svg", snap.svg.startsWith("<svg") && snap.svg.includes('width="800"'));
+eq("snapshot legend numbers every node", snap.legend.length, board.nodes.length + 1);
+ok("snapshot legend carries ids", snap.legend.some((l) => l.includes("[n1] text: Lisbon trip")));
+ok("snapshot embeds image thumbnails", snap.svg.includes('href="data:image/jpeg;base64,AAAA"'));
+const risky = snapshotSvg({ ...board, nodes: [{ id: "x", type: "text", parentId: null, x: 0, y: 0, width: null, height: null, data: { text: 'a <script> & "b"' } }] });
+ok("snapshot escapes text", !risky.svg.includes("<script") && risky.svg.includes("&#60;script &#38; &#34;b&#34;"));
+ok("snapshot draws groups and swatches", snap.svg.includes("#1d4ed8"));
+const focused = snapshotSvg(board, { region: { x: -50, y: -50, w: 300, h: 200 } });
+ok("snapshot region crops the legend", focused.legend.length > 0 && focused.legend.length < board.nodes.length);
 
 console.log(`\nagent — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

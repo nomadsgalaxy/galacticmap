@@ -36,6 +36,8 @@ required.
 | `whoami` | read | Verify the token; return the user + scopes. |
 | `list_boards` | read | List boards you can access (role + counts). |
 | `describe_board` | read | The board as readable text: groups, ungrouped areas, mind-map nesting, connectors and variables, one line per node with its id. Start here. |
+| `view_board` | read | The board as a picture: groups, connectors, mind-map links, images and text, each node numbered, with a legend mapping numbers to ids. `focus` zooms to a group, or to a node and its branch. |
+| `view_image` | read | Open one image node and see the picture itself, plus its alt text. |
 | `apply_changes` | write | Add, update or delete nodes, connectors and groups in one all-or-nothing batch. Leave out x/y and the server finds free space. `mode: "propose"` sends additions to the owner as a suggestion to accept or discard instead. |
 | `get_board` | read | Full board as raw JSON: nodes, edges, groups, mind-map parent links. |
 | `create_board` | write | Create a board (you become OWNER). |

@@ -50,6 +50,16 @@ async function api(path, { method = "GET", body } = {}) {
   return data;
 }
 
+/** Fetch a binary API response (an image) as base64; throws like api(). */
+async function apiBytes(path) {
+  const res = await fetch(`${BASE}/api/v1${path}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(`GET ${path} -> ${res.status}: ${data.message || data.error || res.statusText}`);
+  }
+  return { data: Buffer.from(await res.arrayBuffer()).toString("base64"), mimeType: res.headers.get("content-type") ?? "image/png", alt: res.headers.get("x-alt-text") };
+}
+
 // Tool callbacks return MCP content; we serialize results as pretty JSON text.
 const ok = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
 const fail = (err) => ({ isError: true, content: [{ type: "text", text: String(err?.message ?? err) }] });
@@ -63,10 +73,21 @@ const tool = (fn) => async (a) => {
 };
 
 const server = new McpServer(
-  { name: "galacticboard", version: "1.1.0" },
+  { name: "galacticboard", version: "1.2.0" },
   {
-    instructions:
-      "Galactic Map boards are moodboards / mind-maps that people organize by hand. Call describe_board first to see the groups, areas and ids. Make changes with apply_changes in one batch. When you're adding ideas nobody explicitly asked for, use mode 'propose' so the owner can accept or discard each one.",
+    instructions: [
+      "Galactic Map boards are hand-made moodboards and mind maps on an infinite canvas. Treat a board like someone's desk: read it before you touch it, and keep their arrangement.",
+      "",
+      "Reading a board: describe_board gives every node's id, content and position, grouped the way the owner arranged it. view_board shows you the picture (numbered nodes, legend maps numbers to ids); use focus to zoom into a group or branch when the whole board is too small to read. view_image opens one image node. Look at the images before you describe, sort or add to a moodboard, because the alt text is often empty.",
+      "",
+      "How boards are built:",
+      "- Mind map: a node's parentId makes it a child; children sit to the right of their parent in a column. Add ideas as children of the topic they belong to (parent, with no x/y) instead of loose nodes.",
+      "- Moodboard: meaning is spatial. Nodes near each other belong together, groups (labelled, colored clouds) name a theme, swatches are the palette, images carry the mood. Add to an existing group with place.in or group, next to related nodes with place.near.",
+      "- Connectors (add_edge) are for relationships that cross the tree or link areas, and a label says what the link means. Don't use them in place of parent links.",
+      "- Tags group nodes across areas; reuse the board's existing tags before inventing new ones.",
+      "",
+      "Changing a board: batch everything in one apply_changes call. Leave out x/y and the server finds free space. Don't move or restyle the owner's nodes unless asked. Use mode 'propose' for ideas nobody explicitly asked for, so the owner accepts or discards each one. After a big change, call view_board to check it reads well.",
+    ].join("\n"),
   },
 );
 
@@ -95,7 +116,7 @@ server.registerTool(
   {
     title: "Describe board",
     description:
-      "Read a board the way a person sees it: its groups (labelled clouds), ungrouped areas clustered by position, mind-map nesting, connectors, and variables, one line per node with its id, content, #tags and position. Start here before organizing or adding to a board; use get_board only when you need raw JSON.",
+      "Read a board the way a person sees it: its groups (labelled clouds), ungrouped areas clustered by position, mind-map nesting, connectors, and variables, one line per node with its id, content, #tags and position. Start here before organizing or adding to a board, and pair it with view_board to see the layout and images; use get_board only when you need raw JSON.",
     inputSchema: {
       boardId: z.string().describe("Board id"),
       maxChars: z.number().int().min(1000).max(200000).optional().describe("Size budget for the outline (default 24000)"),
@@ -105,6 +126,57 @@ server.registerTool(
     try {
       const { outline } = await api(`/boards/${boardId}/outline${maxChars ? `?maxChars=${maxChars}` : ""}`);
       return { content: [{ type: "text", text: outline }] };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "view_board",
+  {
+    title: "View board",
+    description:
+      "See a board as a picture: groups, connectors, mind-map links, images and text, each node with a numbered badge. The legend maps each number to its node id. Pass focus (a group id, or a node id to see it with its mind-map branch) to zoom in when the whole board is too small to read.",
+    inputSchema: {
+      boardId: z.string().describe("Board id"),
+      focus: z.string().optional().describe("Group or node id to zoom to"),
+      width: z.number().int().min(400).max(2400).optional().describe("Image width in px (default 1400)"),
+    },
+  },
+  async ({ boardId, focus, width }) => {
+    try {
+      const q = new URLSearchParams({ ...(focus ? { focus } : {}), ...(width ? { width: String(width) } : {}) });
+      const s = await api(`/boards/${boardId}/snapshot${q.size ? `?${q}` : ""}`);
+      const r = s.region;
+      return {
+        content: [
+          { type: "image", data: s.data, mimeType: s.mimeType },
+          { type: "text", text: [`${s.title}: showing x ${Math.round(r.x)}..${Math.round(r.x + r.w)}, y ${Math.round(r.y)}..${Math.round(r.y + r.h)}`, ...s.legend].join("\n") },
+        ],
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "view_image",
+  {
+    title: "View image",
+    description: "Open an image node and see the picture itself (scaled to max px on its long edge). If it has no alt text, consider adding a short one with apply_changes so the outline describes it next time.",
+    inputSchema: {
+      boardId: z.string().describe("Board id"),
+      nodeId: z.string().describe("Image node id"),
+      max: z.number().int().min(64).max(2048).optional().describe("Longest edge in px (default 1568)"),
+    },
+  },
+  async ({ boardId, nodeId, max }) => {
+    try {
+      const img = await apiBytes(`/boards/${boardId}/nodes/${nodeId}/image${max ? `?max=${max}` : ""}`);
+      const alt = img.alt ? decodeURIComponent(img.alt) : null;
+      return { content: [{ type: "image", data: img.data, mimeType: img.mimeType }, { type: "text", text: alt ? `alt: ${alt}` : "(no alt text)" }] };
     } catch (e) {
       return fail(e);
     }

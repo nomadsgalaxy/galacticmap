@@ -36,8 +36,9 @@ routing, caching or Server Actions (see `AGENTS.md`).
 ## API (`app/api/`)
 
 - `api/v1/*`: the public REST API. Bearer `gbk_…` tokens, scoped read or read/write, same RBAC as the UI.
-  Boards, nodes, edges, variables, `me`, plus `boards/:id/outline` (the board as text for agents) and
-  `boards/:id/changes` (batched changes, applied or proposed). Writes are pushed live to open editors
+  Boards, nodes, edges, variables, `me`, plus `boards/:id/outline` (the board as text for agents),
+  `boards/:id/snapshot` (the board as a PNG with numbered nodes), `boards/:id/nodes/:nodeId/image` (an
+  image node's picture, scaled) and `boards/:id/changes` (batched changes, applied or proposed). Writes are pushed live to open editors
   as `graph` frames on the editor stream. Shared helpers (`json`, `authed`, `readJson`) live in `api/v1/`.
 - `api/boards/[id]/graph` (PATCH): the editor's save path. `export` and `boards/import` handle the portable
   board format. `live` and `suggest-stream` feed the realtime spectator and suggestion streams.
@@ -58,7 +59,8 @@ routing, caching or Server Actions (see `AGENTS.md`).
 | `member-actions.ts`, `version-actions.ts`, `tag-actions.ts`, `token-actions.ts` | Members/invites, versions, tags, API tokens |
 | `api-token.ts` | Token minting. Only the sha256 is stored |
 | `agent-service.ts` | The agent side of the API: `describe_board` and `apply_changes` (batched ops with refs, apply or propose) |
-| `board-outline.ts`, `board-layout.ts` | The board-as-text outline for agents, and free-space placement and clustering. Both pure, tested in `scripts/test-agent.mjs` |
+| `board-outline.ts`, `board-layout.ts`, `board-snapshot.ts` | The board-as-text outline for agents, free-space placement and clustering, and the board drawn as SVG. All pure, tested in `scripts/test-agent.mjs` |
+| `agent-images.ts` | Images for agents: an image node's picture, and the snapshot rasterized with sharp. Same `board:view` gate as the outline |
 | `variables.ts` | `$var(...)` parsing and `Sum`/`Avg` evaluation. Pure TS, safe on client and server |
 | `galaxy.ts`, `galaxy-actions.ts` | Cross-board view and links |
 | `ai.ts`, `ai-actions.ts` | Generate map, expand node, summarize. Hidden unless `ANTHROPIC_API_KEY` is set |
