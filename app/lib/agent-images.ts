@@ -7,6 +7,7 @@ import { getStorage } from "@/app/lib/storage/driver";
 import { ApiError, getBoardFull } from "@/app/lib/board-service";
 import { rectOf, union, type Rect } from "@/app/lib/board-layout";
 import { snapshotSvg } from "@/app/lib/board-snapshot";
+import { imageCaption } from "@/app/lib/board-outline";
 
 // Bytes for an asset this board may show: uploaded to this board, or by the token's own user. A node's
 // assetId is client-supplied, so this stops a writer from pointing a node at someone else's upload.
@@ -26,7 +27,7 @@ export async function nodeImage(principal: ApiPrincipal, boardId: string, nodeId
   const node = board.nodes.find((n) => n.id === nodeId);
   if (!node) throw new ApiError(404, "Node not found", "not_found");
   if (node.type !== "image") throw new ApiError(400, `Node is a ${node.type}, not an image`, "not_image");
-  const alt = typeof node.data.alt === "string" ? node.data.alt : null;
+  const alt = imageCaption(node.data.alt).caption || null; // a bare file name isn't a caption
   const asset = await boardAsset(principal, boardId, String(node.data.assetId));
   if (!asset) throw new ApiError(404, "The image file for this node is missing", "asset_missing");
   const img = sharp(asset.buf, { animated: false }).rotate().resize(max, max, { fit: "inside", withoutEnlargement: true });

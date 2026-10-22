@@ -1,6 +1,6 @@
 // Self-check for agent placement + the board outline. Run: npx tsx scripts/test-agent.mjs
 import { findSpot, sizeOf, rectOf, union, clusters } from "../app/lib/board-layout.ts";
-import { outlineText } from "../app/lib/board-outline.ts";
+import { outlineText, imageCaption } from "../app/lib/board-outline.ts";
 import { snapshotSvg } from "../app/lib/board-snapshot.ts";
 
 let pass = 0, fail = 0;
@@ -75,6 +75,21 @@ ok("outline ungrouped area heading", text.includes("## Ungrouped area around (30
 const short = outlineText(board, 300);
 ok("outline respects budget", short.length <= 400 && short.includes("truncated"));
 ok("empty board", outlineText({ ...board, nodes: [], edges: [], groups: [] }).includes("(This board is empty.)"));
+
+// --- image captions: a file-name alt isn't a caption ---
+eq("file name alt", imageCaption("image.png"), { caption: "", fileName: "image.png" });
+eq("camera file name", imageCaption("IMG_2041.JPEG"), { caption: "", fileName: "IMG_2041.JPEG" });
+eq("real caption kept", imageCaption("Sunset over the Tagus"), { caption: "Sunset over the Tagus", fileName: "" });
+eq("caption that mentions a file isn't a file name", imageCaption("Logo, see brand.png\nfor the source").caption !== "", true);
+eq("missing alt", imageCaption(undefined), { caption: "", fileName: "" });
+const pics = outlineText({ ...board, groups: [], edges: [], nodes: [
+  { id: "p1", type: "image", parentId: null, x: 0, y: 0, width: null, height: null, data: { assetId: "a", alt: "image.png" } },
+  { id: "p2", type: "image", parentId: null, x: 300, y: 0, width: null, height: null, data: { assetId: "b", alt: "Tram 28" } },
+  { id: "p3", type: "image", parentId: null, x: 600, y: 0, width: null, height: null, data: { assetId: "c" } },
+] });
+ok("outline flags a file-name alt", pics.includes("[p1] image: (no caption, file image.png; view_image shows it)"));
+ok("outline quotes a real caption", pics.includes('[p2] image: "Tram 28"'));
+ok("outline flags a missing alt", pics.includes("[p3] image: (no caption; view_image shows it)"));
 
 // --- snapshot picture ---
 const snap = snapshotSvg({ ...board, nodes: [...board.nodes, { id: "img", type: "image", parentId: null, x: 900, y: 0, width: 200, height: 100, data: { assetId: "a1", alt: "<b>" } }] }, { images: new Map([["a1", "data:image/jpeg;base64,AAAA"]]), width: 800 });

@@ -16,6 +16,14 @@ const clip = (s: string, n: number) => {
 const plain = (md: string) => md.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[#*_`>~|]/g, "");
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
+// Dropping or pasting an image fills alt with the file name ("image.png"), which says nothing about the
+// picture. Split that out so agents treat it as uncaptioned instead of quoting it as a description.
+const FILE_NAME = /^[^/\\\n]{1,200}\.(png|jpe?g|gif|webp|avif|heic|heif|bmp|svg|tiff?)$/i;
+export function imageCaption(alt: unknown): { caption: string; fileName: string } {
+  const s = str(alt).trim();
+  return FILE_NAME.test(s) ? { caption: "", fileName: s } : { caption: s, fileName: "" };
+}
+
 type Ctx = { vars: VarMap; units: VarUnits };
 
 function content(n: SnapshotNode, ctx: Ctx): string {
@@ -24,7 +32,10 @@ function content(n: SnapshotNode, ctx: Ctx): string {
     case "text": return `"${clip(plain(str(d.text)), 160)}"`;
     case "swatch": return `color ${str(d.hex) || "?"}`;
     case "link": return [str(d.title) && `"${clip(str(d.title), 80)}"`, str(d.url)].filter(Boolean).join(" ") || "(empty link)";
-    case "image": return str(d.alt) ? `"${clip(str(d.alt), 120)}"` : "(no alt text; view_image shows it)";
+    case "image": {
+      const { caption, fileName } = imageCaption(d.alt);
+      return caption ? `"${clip(caption, 120)}"` : `(no caption${fileName ? `, file ${fileName}` : ""}; view_image shows it)`;
+    }
     case "tracker": {
       const lines = Array.isArray(d.lines) ? (d.lines as string[]) : [];
       const shown = lines.slice(0, 6).map((l) => renderTrackerLine(l, ctx.vars, ctx.units)).join(" | ");

@@ -165,7 +165,7 @@ server.registerTool(
   "view_image",
   {
     title: "View image",
-    description: "Open an image node and see the picture itself (scaled to max px on its long edge). If it has no alt text, consider adding a short one with apply_changes so the outline describes it next time.",
+    description: "Open an image node and see the picture itself (scaled to max px on its long edge). If it has no caption (data.alt), consider writing a short one with apply_changes so the outline describes it next time.",
     inputSchema: {
       boardId: z.string().describe("Board id"),
       nodeId: z.string().describe("Image node id"),
@@ -176,7 +176,7 @@ server.registerTool(
     try {
       const img = await apiBytes(`/boards/${boardId}/nodes/${nodeId}/image${max ? `?max=${max}` : ""}`);
       const alt = img.alt ? decodeURIComponent(img.alt) : null;
-      return { content: [{ type: "image", data: img.data, mimeType: img.mimeType }, { type: "text", text: alt ? `alt: ${alt}` : "(no alt text)" }] };
+      return { content: [{ type: "image", data: img.data, mimeType: img.mimeType }, { type: "text", text: alt ? `caption: ${alt}` : "(no caption yet: if you can describe it, set data.alt with apply_changes)" }] };
     } catch (e) {
       return fail(e);
     }

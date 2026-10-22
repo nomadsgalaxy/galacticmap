@@ -2,7 +2,7 @@
 // numbered badge, plus a legend mapping each number to the node's id. Pure (no DB, no sharp), so it's testable
 // on its own; the route rasterizes it. Only an approximation of the editor: fonts and wrapping are estimated.
 import type { SnapshotNode } from "./types";
-import type { OutlineBoard } from "./board-outline";
+import { imageCaption, type OutlineBoard } from "./board-outline";
 import { rectOf, union, type Rect } from "./board-layout";
 import { scanVariablesTyped, cellForEval, renderTrackerLine, type VarMap, type VarUnits } from "./variables";
 import { evaluateCellDisplay } from "../(editor)/boards/[id]/_components/nodes/sheetFormula";
@@ -74,7 +74,7 @@ function drawNode(n: SnapshotNode, r: Rect, ctx: Ctx): string {
     }
     case "image": {
       const href = ctx.images.get(str(d.assetId));
-      if (!href) return card(r, "#f4f4f5") + textBlock(wrap(`[image] ${str(d.alt)}`, inner, 12, fits(12)), r.x + pad, r.y + pad, 12, ' fill="#71717a"');
+      if (!href) return card(r, "#f4f4f5") + textBlock(wrap(`[image] ${imageCaption(d.alt).caption}`, inner, 12, fits(12)), r.x + pad, r.y + pad, 12, ' fill="#71717a"');
       const aspect = d.fit === "cover" ? "xMidYMid slice" : "xMidYMid meet";
       const clip = `c${n.id.replace(/\W/g, "")}`;
       return `<clipPath id="${clip}"><rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="10"/></clipPath>`
@@ -162,7 +162,7 @@ export function snapshotSvg(board: OutlineBoard, opts: SnapshotOptions = {}): { 
     if (!hits(r)) continue;
     const num = legend.length + 1;
     const d = n.data;
-    const label = n.type === "text" ? plain(str(d.text)) : n.type === "image" ? str(d.alt) : n.type === "link" ? str(d.title) || str(d.url) : n.type === "swatch" ? str(d.hex) : str(d.title);
+    const label = n.type === "text" ? plain(str(d.text)) : n.type === "image" ? imageCaption(d.alt).caption : n.type === "link" ? str(d.title) || str(d.url) : n.type === "swatch" ? str(d.hex) : str(d.title);
     legend.push(`${num} = [${n.id}] ${n.type}${label ? `: ${label.replace(/\s+/g, " ").slice(0, 60)}` : ""}`);
     const br = 11 * k;
     parts.push(drawNode(n, r, ctx)

@@ -146,8 +146,10 @@ function NodeInspector({ boardId, node }: { boardId: string; node: Node }) {
 
       {node.type === "image" && (
         <>
-          <label className="mb-1 block text-[11px] text-on-surface-variant">Alt text</label>
+          <label htmlFor="inspector-alt" className="mb-1 block text-[11px] text-on-surface-variant">Caption / alt text</label>
           <input
+            id="inspector-alt"
+            placeholder="What's in the picture?"
             value={alt}
             onChange={(e) => setAlt(e.target.value)}
             onBlur={() => commit({ alt })}
