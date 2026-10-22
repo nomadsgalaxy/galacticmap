@@ -1,10 +1,11 @@
 // Pictures for AI agents: an image node's actual image, and the whole board (or part of it) rendered as a
 // PNG. Both go through the same board:view gate as describe_board, so a token sees no more than its user.
+import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { prisma } from "@/app/lib/db";
 import type { ApiPrincipal } from "@/app/lib/api-token";
 import { getStorage } from "@/app/lib/storage/driver";
-import { ApiError, getBoardFull } from "@/app/lib/board-service";
+import { ApiError, gate, getBoardFull } from "@/app/lib/board-service";
 import { rectOf, union, type Rect } from "@/app/lib/board-layout";
 import { snapshotSvg } from "@/app/lib/board-snapshot";
 import { imageCaption } from "@/app/lib/board-outline";
@@ -105,4 +106,32 @@ export async function boardSnapshot(principal: ApiPrincipal, boardId: string, op
     ...(inView.length > MAX_THUMBS ? [`${inView.length - MAX_THUMBS} images beyond the first ${MAX_THUMBS} are drawn as placeholders. Use focus to zoom in.`] : []),
   ];
   return { png, legend, notes, region: drawn, title: board.title };
+}
+
+const MAX_UPLOAD = 10 * 1024 * 1024; // same cap as the editor's upload
+// sharp's detected format → stored type. SVG stays out, as in the editor (script-injection surface).
+const FORMATS: Record<string, [mime: string, ext: string]> = { png: ["image/png", "png"], jpeg: ["image/jpeg", "jpg"], gif: ["image/gif", "gif"], webp: ["image/webp", "webp"] };
+
+/**
+ * Store an image an agent uploads to a board. The type comes from decoding the bytes, not from what the
+ * client claims, so a non-image can't be stored and later served under an image content type.
+ * Same storage layout as the editor's /api/assets upload.
+ */
+export async function uploadBoardImage(principal: ApiPrincipal, boardId: string, buf: Buffer) {
+  await gate(principal, boardId, "node:edit");
+  if (!buf.length) throw new ApiError(400, "Send the image bytes as the request body", "empty");
+  if (buf.length > MAX_UPLOAD) throw new ApiError(413, "Images can be at most 10 MB", "too_large");
+  const meta = await sharp(buf, { animated: false }).metadata().catch(() => null);
+  const fmt = meta?.format ? FORMATS[meta.format] : undefined;
+  if (!fmt) throw new ApiError(415, "Unsupported image: send PNG, JPEG, GIF or WebP", "unsupported_type");
+  const asset = await prisma.asset.create({
+    data: {
+      userId: principal.userId, boardId, storageDriver: "local", storageKey: "", mimeType: fmt[0], byteSize: buf.length,
+      width: meta!.width ?? null, height: meta!.height ?? null, checksum: createHash("sha256").update(buf).digest("hex"),
+    },
+  });
+  const key = `uploads/${asset.id}.${fmt[1]}`;
+  await getStorage().put(key, buf);
+  await prisma.asset.update({ where: { id: asset.id }, data: { storageKey: key } });
+  return { assetId: asset.id, mimeType: fmt[0], width: meta!.width ?? null, height: meta!.height ?? null };
 }
