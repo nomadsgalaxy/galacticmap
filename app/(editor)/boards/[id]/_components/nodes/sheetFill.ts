@@ -10,33 +10,53 @@ import { cellOutput } from "../../../../../lib/variables";
 const TOKEN =
   /(?<![A-Za-z0-9_.$])(?:(\$)([A-Z]{1,3})(\$?)(\d+)|()([A-Za-z]{1,3})(\$?)(\d+))(?![A-Za-z0-9_.(])|(?<![A-Za-z0-9_.$])(\$?)([A-Za-z]{1,3}):(\$?)([A-Za-z]{1,3})(?![A-Za-z0-9_.(])|\$[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_.]*/g;
 
+// A cell range (B2:B9), matched first so each end knows which end it is.
+const END = String.raw`(?:\$[A-Z]{1,3}|[A-Za-z]{1,3})\$?\d+`;
+const RANGE = new RegExp(String.raw`((?<![A-Za-z0-9_.$])${END}:${END}(?![A-Za-z0-9_.(]))`);
+
 const colIndex = (letters: string) => parseRef(letters + "1")!.col;
 
 // Where a ref points after an edit: the new 0-based index, or null when its row/column is gone (#REF!).
-type MapIndex = (index: number, abs: boolean) => number | null;
+// `side` says which end of a range the ref is, so a deletion can pull that end inward instead.
+type Side = "start" | "end" | undefined;
+type MapIndex = (index: number, abs: boolean, side?: Side) => number | null;
 
 // Rewrite every cell ref and whole-column range in a formula through `mapRow`/`mapCol`.
 function mapRefs(formula: string, mapRow: MapIndex, mapCol: MapIndex): string {
-  // Leave "string literals" untouched: rewrite only the parts between them.
-  return formula.split(/("(?:[^"]|"")*")/).map((part, i) => (i % 2 ? part : part.replace(TOKEN, (m, ...g: (string | undefined)[]) => {
+  const cell = (side: Side) => (m: string, ...g: (string | undefined)[]) => {
     const [cAbsA, colA, rAbsA, rowA, cAbsB, colB, rAbsB, rowB, rgAbs1, rgCol1, rgAbs2, rgCol2] = g;
     const letters = colA ?? colB, digits = rowA ?? rowB;
     if (letters && digits) {
       const cAbs = (cAbsA ?? cAbsB) === "$", rAbs = (rAbsA ?? rAbsB) === "$";
-      const col = mapCol(colIndex(letters), cAbs), row = mapRow(Number(digits) - 1, rAbs);
+      const col = mapCol(colIndex(letters), cAbs, side), row = mapRow(Number(digits) - 1, rAbs, side);
       if (col == null || row == null || col < 0 || row < 0) return "#REF!";
       return `${cAbs ? "$" : ""}${colName(col)}${rAbs ? "$" : ""}${row + 1}`;
     }
     if (rgCol1 && rgCol2) {
-      const one = (abs: string | undefined, letters: string) => {
-        const col = mapCol(colIndex(letters), abs === "$");
-        return col == null || col < 0 ? null : `${abs ?? ""}${colName(col)}`;
+      const one = (abs: string | undefined, letters: string, end: Side) => {
+        const col = mapCol(colIndex(letters), abs === "$", end);
+        return col == null || col < 0 ? null : col;
       };
-      const a = one(rgAbs1, rgCol1), b = one(rgAbs2, rgCol2);
-      return a && b ? `${a}:${b}` : "#REF!";
+      const a = one(rgAbs1, rgCol1, "start"), b = one(rgAbs2, rgCol2, "end");
+      // Both ends pulled past each other: every column of the range was deleted.
+      if (a == null || b == null || (a > b && colIndex(rgCol1) <= colIndex(rgCol2))) return "#REF!";
+      return `${rgAbs1 ?? ""}${colName(a)}:${rgAbs2 ?? ""}${colName(b)}`;
     }
     return m; // a $variable or a word: unchanged
-  }))).join("");
+  };
+  const range = (r: string) => {
+    const [a, b] = r.split(":");
+    const ma = a.replace(TOKEN, cell("start")), mb = b.replace(TOKEN, cell("end"));
+    const pa = parseRef(ma.replaceAll("$", "")), pb = parseRef(mb.replaceAll("$", ""));
+    const oa = parseRef(a.replaceAll("$", ""))!, ob = parseRef(b.replaceAll("$", ""))!;
+    if (!pa || !pb) return "#REF!";
+    // Ends that crossed over (and weren't written that way) mean the whole range was deleted.
+    if ((pa.row > pb.row && oa.row <= ob.row) || (pa.col > pb.col && oa.col <= ob.col)) return "#REF!";
+    return `${ma}:${mb}`;
+  };
+  // Leave "string literals" untouched: rewrite only the parts between them; ranges first, then lone refs.
+  return formula.split(/("(?:[^"]|"")*")/).map((part, i) => (i % 2 ? part : part.split(RANGE)
+    .map((piece, j) => (j % 2 ? range(piece) : piece.replace(TOKEN, cell(undefined)))).join(""))).join("");
 }
 
 export const shiftFormula = (formula: string, dRow: number, dCol: number) =>
@@ -53,11 +73,13 @@ function mapCellFormula(raw: string, f: (formula: string) => string): string {
 export const shiftCell = (raw: string, dRow: number, dCol: number) => mapCellFormula(raw, (e) => shiftFormula(e, dRow, dCol));
 
 // Insert (count > 0) or delete (count < 0) whole rows or columns at `at` (0-based), like Excel: cells
-// below/right of it move, and every formula's refs follow their cells, $-anchored or not. A ref into a
-// deleted row/column becomes #REF!.
-// shortcut: a range whose end cell is deleted turns into #REF! (Excel shrinks it); upgrade if people hit it.
+// below/right of it move, and every formula's refs follow their cells, $-anchored or not, so a row
+// inserted inside SUM(B2:B9) makes it SUM(B2:B10). Deleting a range's first or last line shrinks it;
+// a lone ref into a deleted line, or a range with every line deleted, becomes #REF!.
 export function insertLines(cells: Record<string, string>, axis: "row" | "col", at: number, count: number): Record<string, string> {
-  const move: MapIndex = (i) => (i < at ? i : count < 0 && i < at - count ? null : i + count);
+  const gone = (i: number) => count < 0 && i >= at && i < at - count;
+  const move: MapIndex = (i, _abs, side) =>
+    i < at ? i : gone(i) ? (side === "start" ? at : side === "end" ? at - 1 : null) : i + count;
   const keep: MapIndex = (i) => i;
   const [mapRow, mapCol] = axis === "row" ? [move, keep] : [keep, move];
   const next: Record<string, string> = {};
