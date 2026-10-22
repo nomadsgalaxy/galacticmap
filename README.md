@@ -14,7 +14,7 @@ Galactic Map by [NomadsGalaxy](https://www.nomadsgalaxy.com).
 - **Trackable variables** — write `$cost(30)` anywhere and reference it (`Sum($cost)`, `Avg($cost)`) in spreadsheets, trackers, or a HUD; spreadsheet cells can export their result as a variable too. Readable over the API.
 - **Grouping** into labelled, colored clouds; tags and tag filtering; branch focus and collapse.
 - **Collaboration** — realtime multi-cursor editing, plus a moderated public-suggestions workflow for anonymous visitors.
-- **Sharing** — publish a board to a read-only public link with a clean "stream" mode.
+- **Sharing** — publish a board to a read-only public link with a clean "stream" mode. While a board is published, the images on it can be fetched by anyone who has their address; unpublishing closes that (browsers and CDNs may keep a cached copy for up to a day).
 - **Keyboard-first** — hold a node-type key (Tab = text, C = color, L = link, S = spreadsheet, V = tracker) and press an arrow to spawn a connected node in that direction; ⌘/Ctrl+K command palette.
 
 ## Tech stack
