@@ -16,11 +16,12 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 
 const BASE = (process.env.GALACTICBOARD_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 const TOKEN = process.env.GALACTICBOARD_TOKEN;
+const MAX_IMAGE = 10 * 1024 * 1024; // the server's upload limit
 
 if (!TOKEN) {
   process.stderr.write("[galacticboard-mcp] GALACTICBOARD_TOKEN is required (mint one at /settings/tokens)\n");
@@ -206,10 +207,20 @@ server.registerTool(
   tool(async ({ boardId, source, alt, ...where }) => {
     let bytes;
     if (/^https?:\/\//i.test(source)) {
-      const res = await fetch(source);
+      // Stop early on huge or slow downloads rather than pulling them all in and letting the server refuse.
+      const res = await fetch(source, { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(`Couldn't download ${source}: HTTP ${res.status}`);
-      bytes = Buffer.from(await res.arrayBuffer());
+      if (Number(res.headers.get("content-length")) > MAX_IMAGE) throw new Error(`${source} is over 10 MB`);
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of res.body) {
+        size += chunk.length;
+        if (size > MAX_IMAGE) throw new Error(`${source} is over 10 MB`);
+        chunks.push(chunk);
+      }
+      bytes = Buffer.concat(chunks);
     } else {
+      if ((await stat(source)).size > MAX_IMAGE) throw new Error(`${source} is over 10 MB`);
       bytes = await readFile(source);
     }
     const up = await fetch(`${BASE}/api/v1/boards/${boardId}/assets`, {
