@@ -59,7 +59,7 @@ routing, caching or Server Actions (see `AGENTS.md`).
 | `member-actions.ts`, `version-actions.ts`, `tag-actions.ts`, `token-actions.ts` | Members/invites, versions, tags, API tokens |
 | `api-token.ts` | Token minting. Only the sha256 is stored |
 | `agent-service.ts` | The agent side of the API: `describe_board` and `apply_changes` (batched ops with refs, apply or propose) |
-| `board-outline.ts`, `board-layout.ts`, `board-snapshot.ts` | The board-as-text outline for agents, free-space placement and clustering, and the board drawn as SVG. All pure, tested in `scripts/test-agent.mjs` |
+| `board-outline.ts`, `board-layout.ts`, `board-snapshot.ts` | The board-as-text outline for agents, text-card sizes estimated from content, free-space placement, clustering, the `arrange` tidy tree and layout warnings, and the board drawn as SVG. All pure, tested in `scripts/test-agent.mjs` |
 | `agent-images.ts` | Images for agents: an image node's picture, the snapshot rasterized with sharp, and token uploads (type taken from the decoded bytes). Same board gates as the rest of the API |
 | `variables.ts` | `$var(...)` parsing and `Sum`/`Avg` evaluation. Pure TS, safe on client and server |
 | `galaxy.ts`, `galaxy-actions.ts` | Cross-board view and links |

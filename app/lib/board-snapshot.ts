@@ -3,7 +3,7 @@
 // on its own; the route rasterizes it. Only an approximation of the editor: fonts and wrapping are estimated.
 import type { SnapshotNode } from "./types";
 import { imageCaption, type OutlineBoard } from "./board-outline";
-import { rectOf, union, type Rect } from "./board-layout";
+import { groupFrame, rectOf, union, type Rect } from "./board-layout";
 import { scanVariablesTyped, cellForEval, renderTrackerLine, type VarMap, type VarUnits } from "./variables";
 import { evaluateCellDisplay } from "../(editor)/boards/[id]/_components/nodes/sheetFormula";
 
@@ -29,7 +29,7 @@ function borderPoint(r: Rect, from: { x: number; y: number }) {
 
 // Greedy word wrap using an estimated glyph width; cuts with … when it runs out of lines.
 function wrap(text: string, width: number, size: number, maxLines: number): string[] {
-  const perLine = Math.max(4, Math.floor(width / (size * 0.56)));
+  const perLine = Math.max(4, Math.floor(width / (size * 0.5))); // same glyph width as board-layout's textSize
   const out: string[] = [];
   for (const para of text.split("\n")) {
     let line = "";
@@ -122,12 +122,10 @@ export function snapshotSvg(board: OutlineBoard, opts: SnapshotOptions = {}): { 
   const { vars, units } = scanVariablesTyped(board.nodes);
   const ctx: Ctx = { vars, units, images: opts.images ?? new Map() };
   const rects = new Map(board.nodes.map((n) => [n.id, rectOf(n)]));
-  const groupRect = (ids: string[]) => {
-    const u = union(ids.map((id) => rects.get(id)).filter((r): r is Rect => !!r));
-    return u && { x: u.x - 24, y: u.y - 40, w: u.w + 48, h: u.h + 64 };
-  };
+  // The same frame the editor draws, so overlaps in the picture are overlaps on the board.
+  const groupRect = (ids: string[]) => groupFrame(ids.map((id) => rects.get(id)).filter((r): r is Rect => !!r));
   const all = union([...rects.values(), ...board.groups.map((g) => groupRect(g.nodeIds)).filter((r): r is Rect => !!r)]) ?? { x: 0, y: 0, w: 800, h: 600 };
-  const region = opts.region ?? { x: all.x - 40, y: all.y - 40, w: all.w + 80, h: all.h + 80 };
+  const region = opts.region ?? { x: all.x - 40, y: all.y - 80, w: all.w + 80, h: all.h + 120 }; // room above for group labels
   const width = Math.round(opts.width ?? 1600);
   const height = Math.round(Math.min(width * 2, (width * region.h) / region.w));
   const hits = (r: Rect) => r.x < region.x + region.w && r.x + r.w > region.x && r.y < region.y + region.h && r.y + r.h > region.y;
@@ -140,21 +138,24 @@ export function snapshotSvg(board: OutlineBoard, opts: SnapshotOptions = {}): { 
     if (!r || !hits(r)) continue;
     const c = g.color && /^#[0-9a-f]{6}$/i.test(g.color) ? g.color : "#8b5cf6";
     parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="28" fill="${c}" fill-opacity="0.08" stroke="${c}" stroke-width="${2 * k}" stroke-dasharray="${8 * k} ${6 * k}"/>`
-      + `<text x="${r.x + 16}" y="${r.y + 26 * Math.min(k, 3)}" font-size="${18 * Math.min(k, 3)}" font-weight="700" fill="${c}">${esc(g.label ?? "(unlabelled group)")}</text>`);
+      // The label sits just above the frame: zoomed out it's drawn bigger than the editor's 22px headroom.
+      + `<text x="${r.x + 12}" y="${r.y - 6 * Math.min(k, 3)}" font-size="${18 * Math.min(k, 3)}" font-weight="700" fill="${c}">${esc(g.label ?? "(unlabelled group)")}</text>`);
   }
-  // Mind-map links: parent's right edge to child's left edge, as the editor's tree edges run.
+  // Mind-map links: from the parent's side facing the child to the child's near side.
   for (const n of board.nodes) {
     const a = n.parentId ? rects.get(n.parentId) : undefined, b = rects.get(n.id);
     if (!a || !b || (!hits(a) && !hits(b))) continue;
-    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2;
+    const toLeft = b.x + b.w / 2 < a.x + a.w / 2;
+    const x1 = toLeft ? a.x : a.x + a.w, y1 = a.y + a.h / 2, x2 = toLeft ? b.x + b.w : b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2;
     parts.push(`<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="#a78bfa" stroke-width="${2.5 * k}"/>`);
   }
+  const edgeLabels: string[] = []; // drawn last, so cards don't hide them
   for (const e of board.edges) {
     const a = rects.get(e.source), b = rects.get(e.target);
     if (!a || !b || (!hits(a) && !hits(b))) continue;
     const p = center(a), q = borderPoint(b, p);
     parts.push(`<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="#64748b" stroke-width="${2 * k}" stroke-dasharray="${6 * k} ${4 * k}" marker-end="url(#arrow)"/>`);
-    if (e.label) parts.push(`<text x="${(p.x + q.x) / 2}" y="${(p.y + q.y) / 2 - 6 * k}" font-size="${12 * k}" text-anchor="middle" fill="#334155" stroke="#ffffff" stroke-width="${4 * k}" paint-order="stroke">${esc(e.label)}</text>`);
+    if (e.label) edgeLabels.push(`<text x="${(p.x + q.x) / 2}" y="${(p.y + q.y) / 2 - 6 * k}" font-size="${12 * k}" text-anchor="middle" fill="#334155" stroke="#ffffff" stroke-width="${4 * k}" paint-order="stroke">${esc(e.label)}</text>`);
   }
 
   const legend: string[] = [];
@@ -174,6 +175,6 @@ export function snapshotSvg(board: OutlineBoard, opts: SnapshotOptions = {}): { 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${region.x} ${region.y} ${region.w} ${region.h}" preserveAspectRatio="xMidYMin meet" font-family="sans-serif" fill="#18181b">`
     + `<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs>`
     + `<rect x="${region.x}" y="${region.y}" width="${region.w}" height="${region.h}" fill="#fafaf9"/>`
-    + parts.join("") + `</svg>`;
+    + parts.join("") + edgeLabels.join("") + `</svg>`;
   return { svg, legend, region };
 }
