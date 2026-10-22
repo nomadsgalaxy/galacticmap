@@ -13,7 +13,7 @@ import { NODE_TYPES, parseNodeData, type SnapshotNode, type SnapshotEdge } from 
 import { ApiError, announceGraph, gate, getBoardFull, type GroupSnapshot } from "@/app/lib/board-service";
 import { publishLive } from "@/app/lib/live-bus";
 import { normalizeProposal } from "@/app/lib/public-db";
-import { findSpot, rectOf, sizeOf, union, type Dir, type Rect } from "@/app/lib/board-layout";
+import { findSpot, arrangeBranch, layoutWarnings, rectOf, sizeOf, union, type Dir, type Rect } from "@/app/lib/board-layout";
 import { outlineText } from "@/app/lib/board-outline";
 
 // ── describe_board ───────────────────────────────────────────────────────────────────────────────────
@@ -58,6 +58,10 @@ export const ChangeOp = z.discriminatedUnion("op", [
     tags: Tags.optional(), addNodes: z.array(Id).max(500).optional(), removeNodes: z.array(Id).max(500).optional(),
   }).strict(),
   z.object({ op: z.literal("delete_group"), id: Id }).strict(),
+  z.object({
+    op: z.literal("arrange"), root: Id.describe("mind-map node whose branch to lay out"),
+    dir: z.enum(["right", "left", "balanced"]).optional().describe("which side the children go; default: balanced for a top-level topic, else the side the branch is already on"),
+  }).strict(),
 ]);
 export type ChangeOp = z.infer<typeof ChangeOp>;
 
@@ -77,6 +81,8 @@ export type ChangeResult = {
   deleted: { nodes: string[]; edges: string[]; groups: string[] };
   versionId?: string;
   suggestionId?: string;
+  /** Layout problems involving what this batch touched (overlaps, nodes inside groups they're not in). */
+  warnings?: string[];
 };
 
 const PROPOSE_TYPES = new Set(["text", "swatch", "link"]); // what the suggestion review flow can accept
@@ -313,8 +319,30 @@ export async function applyChanges(principal: ApiPrincipal, boardId: string, raw
             deleted.groups.push(id);
             break;
           }
+          case "arrange": {
+            const id = r.node(i, o.root), root = state.nodes.get(id)!;
+            const parent = root.parentId ? state.nodes.get(root.parentId) : undefined;
+            const dir = o.dir ?? (!parent ? "balanced" : root.x >= parent.x ? "right" : "left");
+            for (const [nid, pos] of arrangeBranch([...state.nodes.values()], [...state.groups.values()], id, dir)) {
+              const cur = state.nodes.get(nid)!;
+              if (cur.x === pos.x && cur.y === pos.y) continue;
+              const n = serializeNode(await tx.node.update({ where: { id: nid }, data: { posX: pos.x, posY: pos.y } }));
+              state.nodes.set(nid, n);
+              touchedNodes.add(nid);
+            }
+            break;
+          }
         }
       }
+
+      // Tell the agent what a person would see as a mess, so it can fix it in the next batch.
+      const label = (nid: string) => {
+        const n = state.nodes.get(nid)!, t = String(n.data.text ?? n.data.title ?? n.data.hex ?? n.type).replace(/\s+/g, " ").trim();
+        return `"${t.slice(0, 40) || n.type}" [${nid}]`;
+      };
+      const touchedAll = new Set([...touchedNodes, ...[...touchedGroups].flatMap((g) => state.groups.get(g)?.nodeIds ?? [])]);
+      const warnings = layoutWarnings([...state.nodes.values()], [...state.groups.values()], touchedAll, label);
+      if (warnings.length) result.warnings = warnings;
 
       result.refs = Object.fromEntries(refs);
       result.nodes = [...touchedNodes].map((id) => state.nodes.get(id)!).filter(Boolean);

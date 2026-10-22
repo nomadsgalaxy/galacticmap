@@ -39,7 +39,7 @@ required.
 | `view_board` | read | The board as a picture: groups, connectors, mind-map links, images and text, each node numbered, with a legend mapping numbers to ids. `focus` zooms to a group, or to a node and its branch. |
 | `view_image` | read | Open one image node and see the picture itself, plus its caption. |
 | `add_image` | write | Put a picture on a board from a local file or an http(s) URL (PNG, JPEG, GIF or WebP, up to 10 MB). Placement works like `apply_changes`. |
-| `apply_changes` | write | Add, update or delete nodes, connectors and groups in one all-or-nothing batch. Leave out x/y and the server finds free space. `mode: "propose"` sends additions to the owner as a suggestion to accept or discard instead. |
+| `apply_changes` | write | Add, update or delete nodes, connectors and groups in one all-or-nothing batch. Leave out x/y and the server finds free space, sized to each card's real content. `arrange` lays out a mind-map branch as a tidy tree. The result lists layout warnings (overlapping cards, cards inside a group they aren't in). `mode: "propose"` sends additions to the owner as a suggestion to accept or discard instead. |
 | `get_board` | read | Full board as raw JSON: nodes, edges, groups, mind-map parent links. |
 | `create_board` | write | Create a board (you become OWNER). |
 | `add_node` | write | Add one node at an exact position; optional `parentId` for a mind-map child. |

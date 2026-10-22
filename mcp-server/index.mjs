@@ -75,7 +75,7 @@ const tool = (fn) => async (a) => {
 };
 
 const server = new McpServer(
-  { name: "galacticboard", version: "1.2.0" },
+  { name: "galacticboard", version: "1.3.0" },
   {
     instructions: [
       "Galactic Map boards are hand-made moodboards and mind maps on an infinite canvas. Treat a board like someone's desk: read it before you touch it, and keep their arrangement.",
@@ -83,12 +83,19 @@ const server = new McpServer(
       "Reading a board: describe_board gives every node's id, content and position, grouped the way the owner arranged it. view_board shows you the picture (numbered nodes, legend maps numbers to ids); use focus to zoom into a group or branch when the whole board is too small to read. Use view_board first, and open view_image only for the images whose content matters, since captions are often empty.",
       "",
       "How boards are built:",
-      "- Mind map: a node's parentId makes it a child; children sit to the right of their parent in a column. Add ideas as children of the topic they belong to (parent, with no x/y) instead of loose nodes.",
+      "- Mind map: a node's parentId makes it a child. Add ideas as children of the topic they belong to (parent, with no x/y) instead of loose nodes.",
       "- Moodboard: meaning is spatial. Nodes near each other belong together, groups (labelled, colored clouds) name a theme, swatches are the palette, images carry the mood. Add to an existing group with place.in or group, next to related nodes with place.near.",
       "- Connectors (add_edge) are for relationships that cross the tree or link areas, and a label says what the link means. Don't use them in place of parent links.",
       "- Tags group nodes across areas; reuse the board's existing tags before inventing new ones.",
       "",
-      "Changing a board: batch everything in one apply_changes call. Leave out x/y and the server finds free space. Don't move or restyle the owner's nodes unless asked. Use mode 'propose' for ideas nobody explicitly asked for, so the owner accepts or discards each one. After a big change, call view_board to check it reads well.",
+      "Laying a board out well (a person has to read it at a glance):",
+      "- Don't compute x/y yourself, and never lay cards out in a grid or one long column. Text cards grow with their content, so hand-made coordinates overlap. Let the server place things (parent, place.near, place.in), and after you build or reshape a mind-map branch, end the batch with {op:\"arrange\", root} to lay it out as a tidy tree.",
+      "- One idea per card: a short title and at most about five bullets. Put longer detail in data.notes (opened from the card), not in the card text. Never leave an empty card.",
+      "- Mind map: one central topic, three to seven main branches spread around it (arrange the root to balance them on both sides), keywords rather than sentences. If a topic has more than about seven children, put them under sub-topics instead of one long list.",
+      "- Moodboard: fewer, bigger things. Give one or two hero images more room (width/height) than the rest, cluster by theme with clear space between clusters, put swatches next to the images they come from, and keep text to short labels. Clusters, not rows and columns.",
+      "- Groups: one label per theme, no cards inside a group's cloud unless they're in the group, and groups don't overlap each other.",
+      "",
+      "Changing a board: batch everything in one apply_changes call. Don't move or restyle the owner's nodes unless asked; arranging a branch you built, or one you were asked to tidy, is fine. Use mode 'propose' for ideas nobody explicitly asked for, so the owner accepts or discards each one. apply_changes returns warnings for overlaps and cards inside groups they're not in: fix every one before you finish, then call view_board to check the board reads well.",
     ].join("\n"),
   },
 );
@@ -259,8 +266,9 @@ server.registerTool(
       '- {op:"delete_node", id}  (its connectors go too; children are detached)',
       '- {op:"add_edge", ref?, source, target, label?}  /  {op:"update_edge", id, label}  /  {op:"delete_edge", id}',
       '- {op:"add_group", ref?, label?, color?:"#rrggbb", tags?, nodes:[ids]}  /  {op:"update_group", id, label?, color?, tags?, addNodes?, removeNodes?}  /  {op:"delete_group", id}',
+      '- {op:"arrange", root:nodeId, dir?:"balanced"|"right"|"left"}  lays out the mind-map branch under root as a tidy tree from the cards\' real sizes (root stays put; siblings keep their order). Default: balanced for a top-level topic, else the side the branch is on. Put it last, after the adds. Apply mode only.',
       "",
-      "Returns refs (your ref → real id), the changed nodes/edges/groups, deleted ids, and versionId when a restorable snapshot was taken first (batches of 10+ ops or any delete).",
+      "Returns refs (your ref → real id), the changed nodes/edges/groups, deleted ids, versionId when a restorable snapshot was taken first (batches of 10+ ops or any delete), and warnings: overlapping cards, cards inside a group they aren't in, and overlapping groups. Fix the warnings with arrange, place or x/y in another batch.",
     ].join("\n"),
     inputSchema: {
       boardId: z.string(),
