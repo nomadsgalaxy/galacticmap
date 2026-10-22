@@ -367,5 +367,19 @@ eq("delete col: refs into it are #REF!", [delCol.A1, delCol.B1].join("|"), "=#RE
 eq("insert col: named output keeps its name", insertLines({ B1: "$Pay = C1*2", C1: "4" }, "col", 0, 1).C1, "$Pay = D1*2");
 eq("insert/delete round trip", JSON.stringify(insertLines(insRow, "row", 1, -1)), JSON.stringify(grid));
 
+// Anthony's case: a row inserted under B4 grows the sum; deleting a range's end line shrinks it.
+const sums = { B10: "=SUM(B2:B9)", C1: "=SUM($B$2:B9)*2" };
+eq("insert inside a range grows it", insertLines(sums, "row", 4, 1).B11, "=SUM(B2:B10)");
+eq("insert inside a range, anchored start", insertLines(sums, "row", 4, 1).C1, "=SUM($B$2:B10)*2");
+eq("insert above a range moves it", insertLines(sums, "row", 0, 1).B11, "=SUM(B3:B10)");
+eq("delete a range's last row shrinks it", insertLines(sums, "row", 8, -1).B9, "=SUM(B2:B8)");
+eq("delete a range's first row shrinks it", insertLines(sums, "row", 1, -1).B9, "=SUM(B2:B8)");
+eq("delete rows inside a range shrinks it", insertLines(sums, "row", 3, -3).B7, "=SUM(B2:B6)");
+eq("delete a whole range is #REF!", insertLines({ A1: "=SUM(B2:B3)" }, "row", 1, -2).A1, "=SUM(#REF!)");
+eq("delete a column range's last column", insertLines({ A1: "=SUM(B1:D1)+SUM(B:D)" }, "col", 3, -1).A1, "=SUM(B1:C1)+SUM(B:C)");
+eq("delete a whole column range is #REF!", insertLines({ A1: "=SUM(B:B)" }, "col", 1, -1).A1, "=SUM(#REF!)");
+eq("ranges still shift in a fill", shiftFormula("SUM(B2:B9)", 1, 0), "SUM(B3:B10)");
+eq("a $variable next to a colon stays", shiftFormula("IF(A1,$cost1:$x2)", 1, 0), "IF(A2,$cost1:$x2)");
+
 console.log(`\nsheetFormula — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

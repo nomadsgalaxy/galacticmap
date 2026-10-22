@@ -43,6 +43,10 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
   const [fill, setFill] = useState<CellRange | null>(null);
   const activeSel = selected && canEdit ? sel : null; // the handle only shows while the sheet itself is selected
   const [menu, setMenu] = useState<{ ref: string; x: number; y: number } | null>(null); // right-click on a cell
+  // Pointing, like Excel: while typing a formula, click a cell to put its ref in, or drag for a range.
+  // `from`..`to` is where that ref sits in the draft, so clicking again (or dragging) replaces it.
+  const [point, setPoint] = useState<{ from: number; to: number; anchor: string; range: CellRange } | null>(null);
+  const pointing = useRef(false);
   const gridRef = useRef<HTMLDivElement>(null);
   // The selected cell holds keyboard focus (tabIndex -1), so typing, arrows and Delete reach it. Its "nokey"
   // class tells React Flow and the board's shortcuts to leave those keys alone (no node delete or nudge).
@@ -144,6 +148,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
 
   const commit = (ref: string) => {
     setEditing(null);
+    setPoint(null);
     const cur = cells[ref] ?? "";
     if (draft === cur) return;
     const next = { ...cells };
@@ -158,12 +163,48 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
     const raw = typed ?? cells[ref] ?? "";
     setDraft(raw);
     setCaret(raw.length);
-    requestAnimationFrame(() => inputRef.current?.setSelectionRange(raw.length, raw.length));
     setPick(0);
     setDismissed(false);
     placeUnder(cell);
+    setPoint(null);
     setEditing(ref);
   };
+
+  // A ref can go in at the caret right after "=", an operator, "(" or ",", or in place of the one just pointed at.
+  const canPoint = () =>
+    !!editing && (draft.trimStart().startsWith("=") || !!cellOutput(draft)) &&
+    ((point != null && caret === point.to) || /[=+\-*/^(,:<>&]$/.test(draft.slice(0, caret).trimEnd()));
+
+  const putRef = (from: number, to: number, anchor: string, over: string) => {
+    const a = parseRef(anchor)!, b = parseRef(over)!;
+    const range = { r0: Math.min(a.row, b.row), c0: Math.min(a.col, b.col), r1: Math.max(a.row, b.row), c1: Math.max(a.col, b.col) };
+    const text = anchor === over ? anchor : `${refName(range.c0, range.r0)}:${refName(range.c1, range.r1)}`;
+    const next = draft.slice(0, from) + text + draft.slice(to);
+    const end = from + text.length;
+    setDraft(next);
+    setCaret(end);
+    setDismissed(true);
+    setPoint({ from, to: end, anchor, range });
+    requestAnimationFrame(() => inputRef.current?.setSelectionRange(end, end));
+  };
+
+  const pointHandlers = (ref: string) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (ref === editing || !canPoint()) return; // otherwise the click ends the edit, as usual
+      e.preventDefault(); // keep focus (and the edit) in the formula's input
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      pointing.current = true;
+      const again = point != null && caret === point.to;
+      putRef(again ? point.from : caret, again ? point.to : caret, ref, ref);
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!pointing.current || !point) return;
+      const over = cellUnder(e);
+      if (over && over in refsHere) putRef(point.from, point.to, point.anchor, over);
+    },
+    onPointerUp: () => { pointing.current = false; },
+  });
 
   const resize = (dr: number, dc: number) => persist({ rows: clampRows(rows + dr), cols: clampCols(cols + dc) });
 
@@ -197,6 +238,13 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
     setMenu(null);
     const size = axis === "row" ? rows : cols;
     persist({ cells: insertLines(cells, axis, at, count), [axis === "row" ? "rows" : "cols"]: size + count });
+  };
+
+  // AutoSum, like Excel's Σ: total everything above the cell in its column.
+  const autoSum = (ref: string) => {
+    setMenu(null);
+    const p = parseRef(ref)!, col = colName(p.col);
+    persist({ cells: { ...cells, [ref]: `=SUM(${col}1:${col}${p.row})` } });
   };
 
   // Fill drag: pointer capture keeps events on the handle; the cell under the pointer sets the range.
@@ -250,7 +298,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                 const ref = refName(c, r);
                 const isEditing = canEdit && editing === ref;
                 const isSel = activeSel === ref && !isEditing;
-                const inFill = !!fill && inRange(fill, r, c) && !isSel;
+                const inFill = (!!fill && inRange(fill, r, c) && !isSel) || (!!editing && !!point && inRange(point.range, r, c));
                 return (
                   <td
                     key={c}
@@ -269,8 +317,10 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                         aria-expanded={listOpen}
                         aria-controls={listOpen ? listId : undefined}
                         aria-activedescendant={listOpen ? `${listId}-${pick}` : undefined}
-                        onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); setDismissed(false); setPick(0); placeUnder(e.target); }}
+                        onChange={(e) => { setPoint(null); setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); setDismissed(false); setPick(0); placeUnder(e.target); }}
                         onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                        // Caret to the end as the editor opens, before the next key, so fast typing stays in order.
+                        onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
                         onBlur={() => commit(ref)}
                         onKeyDown={(e) => {
                           if (listOpen) {
@@ -289,7 +339,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                             commit(ref);
                             if (e.key === "Enter") moveSel(ref, e.shiftKey ? -1 : 1, 0, true);
                             else moveSel(ref, 0, e.shiftKey ? -1 : 1, true);
-                          } else if (e.key === "Escape") { e.preventDefault(); setEditing(null); focusCell(ref, true); }
+                          } else if (e.key === "Escape") { e.preventDefault(); setEditing(null); setPoint(null); focusCell(ref, true); }
                         }}
                       />
                     ) : (
@@ -298,7 +348,8 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                         title={cells[ref] && cells[ref] !== display[ref] ? cells[ref] : undefined}
                         tabIndex={canEdit ? -1 : undefined}
                         aria-label={canEdit ? `Cell ${ref}` : undefined}
-                        onClick={() => canEdit && setSel(ref)}
+                        onClick={() => canEdit && !editing && setSel(ref)}
+                        {...(editing ? pointHandlers(ref) : {})}
                         onDoubleClick={(e) => beginEdit(ref, e.currentTarget.parentElement)}
                         onKeyDown={(e) => onCellKey(e, ref)}
                         onContextMenu={(e) => {
@@ -400,14 +451,15 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                 ["Insert column right", "col", p.col + 1, 1, cols >= MAX_COLS],
                 ["Delete row", "row", p.row, -1, rows <= 1],
                 ["Delete column", "col", p.col, -1, cols <= 1],
+                ["Sum the cells above", "sum", p.col, p.row, p.row === 0],
               ] as const).map(([label, axis, at, count, disabled], i) => (
                 <button
                   key={label}
                   role="menuitem"
                   autoFocus={i === 0}
                   disabled={disabled}
-                  className={`block w-full px-3 py-1 text-left hover:bg-primary/10 focus:bg-primary/10 focus:outline-none disabled:opacity-40${i === 4 ? " mt-1 border-t border-outline-variant pt-1.5" : ""}`}
-                  onClick={() => { editLines(axis, at, count); focusCell(menu.ref, true); }}
+                  className={`block w-full px-3 py-1 text-left hover:bg-primary/10 focus:bg-primary/10 focus:outline-none disabled:opacity-40${i === 4 || i === 6 ? " mt-1 border-t border-outline-variant pt-1.5" : ""}`}
+                  onClick={() => { if (axis === "sum") autoSum(menu.ref); else editLines(axis, at, count); focusCell(menu.ref, true); }}
                 >
                   {label}
                 </button>
