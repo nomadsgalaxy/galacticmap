@@ -7,11 +7,11 @@ import { NodeHandles } from "./NodeHandles";
 import { RotateHandle } from "./RotateHandle";
 import { useCanvasStore } from "../../_store/canvasStore";
 import { updateNodeData } from "../../actions";
-import { evaluateCellDisplay, refName, colName, SHEET_MAX_ROWS as MAX_ROWS, SHEET_MAX_COLS as MAX_COLS, type CellGetter } from "./sheetFormula";
+import { evaluateCellDisplay, refName, colName, parseRef, SHEET_MAX_ROWS as MAX_ROWS, SHEET_MAX_COLS as MAX_COLS, type CellGetter } from "./sheetFormula";
 import { stripVarTokens, scanText, cellOutput, cellForEval, aggregate, formatVar } from "../../../../../lib/variables";
 import { useVariables } from "../VariablesContext";
 import { typingAt, callAt, suggestFunctions, suggestVariables, fnDoc, splitArgs, argIndex } from "./sheetFunctions";
-import { fillRange, fillCells, inRange, type CellRange } from "./sheetFill";
+import { fillRange, fillCells, inRange, insertLines, type CellRange } from "./sheetFill";
 
 type Option = { label: string; insert: string; detail: string };
 
@@ -23,6 +23,7 @@ type SheetData = { rows?: number; cols?: number; cells?: Record<string, string>;
 
 const clampRows = (n: number) => Math.max(1, Math.min(MAX_ROWS, n));
 const clampCols = (n: number) => Math.max(1, Math.min(MAX_COLS, n));
+const ARROWS: Record<string, [number, number] | undefined> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
 
 export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selected }: NodeProps) {
   const d = (data ?? {}) as SheetData;
@@ -41,6 +42,17 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
   const [sel, setSel] = useState<string | null>(null);
   const [fill, setFill] = useState<CellRange | null>(null);
   const activeSel = selected && canEdit ? sel : null; // the handle only shows while the sheet itself is selected
+  const [menu, setMenu] = useState<{ ref: string; x: number; y: number } | null>(null); // right-click on a cell
+  const gridRef = useRef<HTMLDivElement>(null);
+  // The selected cell holds keyboard focus (tabIndex -1), so typing, arrows and Delete reach it. Its "nokey"
+  // class tells React Flow and the board's shortcuts to leave those keys alone (no node delete or nudge).
+  // Focus right away when moving around the grid, so the next key lands on the new cell. Coming out of
+  // the editor (`later`), wait a frame: the cell's div replaces the input on the next render.
+  const focusCell = (ref: string, later = false) => {
+    const go = () => (gridRef.current?.querySelector(`[data-cell="${ref}"] > div`) as HTMLElement | null)?.focus();
+    if (later) requestAnimationFrame(go);
+    else go();
+  };
 
   // Live board-global variable registry — fed to formulas (=Sum($cost), =$cost*1.1, …).
   const { vars, units, names } = useVariables();
@@ -140,11 +152,13 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
     persist({ cells: next });
   };
 
-  const beginEdit = (ref: string, cell?: HTMLElement | null) => {
+  // Double-click, Enter or F2 edits what's there; typing a character replaces it, like Excel.
+  const beginEdit = (ref: string, cell?: HTMLElement | null, typed?: string) => {
     if (!canEdit) return;
-    const raw = cells[ref] ?? "";
+    const raw = typed ?? cells[ref] ?? "";
     setDraft(raw);
     setCaret(raw.length);
+    requestAnimationFrame(() => inputRef.current?.setSelectionRange(raw.length, raw.length));
     setPick(0);
     setDismissed(false);
     placeUnder(cell);
@@ -152,6 +166,38 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
   };
 
   const resize = (dr: number, dc: number) => persist({ rows: clampRows(rows + dr), cols: clampCols(cols + dc) });
+
+  const moveSel = (ref: string, dr: number, dc: number, later = false) => {
+    const p = parseRef(ref);
+    if (!p) return;
+    const next = refName(Math.max(0, Math.min(cols - 1, p.col + dc)), Math.max(0, Math.min(rows - 1, p.row + dr)));
+    setSel(next);
+    focusCell(next, later);
+  };
+
+  const onCellKey = (e: React.KeyboardEvent<HTMLDivElement>, ref: string) => {
+    if (activeSel !== ref) return;
+    const step = ARROWS[e.key];
+    const typed = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (!step && !typed && !["Tab", "Enter", "F2", "Delete", "Backspace"].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (step) moveSel(ref, step[0], step[1]);
+    else if (e.key === "Tab") moveSel(ref, 0, e.shiftKey ? -1 : 1);
+    else if (e.key === "Delete" || e.key === "Backspace") {
+      if (cells[ref] == null) return;
+      const next = { ...cells };
+      delete next[ref];
+      persist({ cells: next });
+    } else beginEdit(ref, e.currentTarget.parentElement, typed ? e.key : undefined);
+  };
+
+  // Insert or delete whole rows/columns at the right-clicked cell; formulas follow their cells.
+  const editLines = (axis: "row" | "col", at: number, count: number) => {
+    setMenu(null);
+    const size = axis === "row" ? rows : cols;
+    persist({ cells: insertLines(cells, axis, at, count), [axis === "row" ? "rows" : "cols"]: size + count });
+  };
 
   // Fill drag: pointer capture keeps events on the handle; the cell under the pointer sets the range.
   const cellUnder = (e: React.PointerEvent) =>
@@ -185,7 +231,7 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
       <NodeHandles />
       {selected && canEdit && <RotateHandle nodeId={id} />}
       {/* Clip the grid to the rounded corners here, not on the outer box: its handles and row/col buttons sit outside it. */}
-      <div className="overflow-hidden rounded-[inherit] font-mono">
+      <div ref={gridRef} className="overflow-hidden rounded-[inherit] font-mono">
       <table className="border-collapse select-none" style={{ borderSpacing: 0 }}>
         <thead>
           <tr>
@@ -237,16 +283,33 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
                             if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); accept(options[Math.min(pick, options.length - 1)]); return; }
                             if (e.key === "Escape") { e.preventDefault(); setDismissed(true); return; }
                           }
-                          if (e.key === "Enter") { e.preventDefault(); commit(ref); }
-                          else if (e.key === "Escape") { e.preventDefault(); setEditing(null); }
+                          // Enter moves down and Tab moves across, like Excel; focus goes back to the grid either way.
+                          if (e.key === "Enter" || e.key === "Tab") {
+                            e.preventDefault();
+                            commit(ref);
+                            if (e.key === "Enter") moveSel(ref, e.shiftKey ? -1 : 1, 0, true);
+                            else moveSel(ref, 0, e.shiftKey ? -1 : 1, true);
+                          } else if (e.key === "Escape") { e.preventDefault(); setEditing(null); focusCell(ref, true); }
                         }}
                       />
                     ) : (
                       <div
-                        className={`nodrag h-full w-full cursor-text overflow-hidden whitespace-nowrap px-1 leading-[22px]${varCells[ref] ? " gb-var" : ""}`}
+                        className={`nodrag nokey h-full w-full cursor-text overflow-hidden whitespace-nowrap px-1 leading-[22px] outline-none${varCells[ref] ? " gb-var" : ""}`}
                         title={cells[ref] && cells[ref] !== display[ref] ? cells[ref] : undefined}
+                        tabIndex={canEdit ? -1 : undefined}
+                        aria-label={canEdit ? `Cell ${ref}` : undefined}
                         onClick={() => canEdit && setSel(ref)}
                         onDoubleClick={(e) => beginEdit(ref, e.currentTarget.parentElement)}
+                        onKeyDown={(e) => onCellKey(e, ref)}
+                        onContextMenu={(e) => {
+                          if (!canEdit) return;
+                          e.preventDefault();
+                          e.stopPropagation(); // ours, not the board's node menu
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setSel(ref);
+                          // A keyboard-opened menu (Shift+F10) has no pointer position, so place it under the cell.
+                          setMenu({ ref, x: e.clientX || r.left, y: e.clientY || r.bottom });
+                        }}
                       >
                         {display[ref] ?? ""}
                       </div>
@@ -306,6 +369,51 @@ export const SpreadsheetNode = memo(function SpreadsheetNode({ id, data, selecte
               <div className="text-[10px] text-on-surface-variant">{callDoc.desc}</div>
             </div>
           ) : null}
+        </div>,
+        document.body,
+      )}
+      {menu && canEdit && createPortal(
+        // The backdrop closes the menu on any click outside it.
+        <div className="fixed inset-0 z-[1000]" onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}>
+          <div
+            role="menu"
+            aria-label={`Rows and columns at ${menu.ref}`}
+            className="fixed min-w-[180px] overflow-hidden rounded-control border border-outline-variant bg-surface-container py-1 text-xs text-on-surface shadow-elev-2"
+            style={{ left: menu.x, top: menu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.preventDefault(); setMenu(null); focusCell(menu.ref, true); }
+              else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+                const i = items.indexOf(document.activeElement as HTMLButtonElement);
+                items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+              }
+            }}
+          >
+            {(() => {
+              const p = parseRef(menu.ref)!;
+              return ([
+                ["Insert row above", "row", p.row, 1, rows >= MAX_ROWS],
+                ["Insert row below", "row", p.row + 1, 1, rows >= MAX_ROWS],
+                ["Insert column left", "col", p.col, 1, cols >= MAX_COLS],
+                ["Insert column right", "col", p.col + 1, 1, cols >= MAX_COLS],
+                ["Delete row", "row", p.row, -1, rows <= 1],
+                ["Delete column", "col", p.col, -1, cols <= 1],
+              ] as const).map(([label, axis, at, count, disabled], i) => (
+                <button
+                  key={label}
+                  role="menuitem"
+                  autoFocus={i === 0}
+                  disabled={disabled}
+                  className={`block w-full px-3 py-1 text-left hover:bg-primary/10 focus:bg-primary/10 focus:outline-none disabled:opacity-40${i === 4 ? " mt-1 border-t border-outline-variant pt-1.5" : ""}`}
+                  onClick={() => { editLines(axis, at, count); focusCell(menu.ref, true); }}
+                >
+                  {label}
+                </button>
+              ));
+            })()}
+          </div>
         </div>,
         document.body,
       )}

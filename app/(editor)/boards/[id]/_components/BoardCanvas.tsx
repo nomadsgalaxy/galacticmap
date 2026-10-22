@@ -1503,11 +1503,12 @@ function Canvas({ boardId, title, canEdit, canManageMembers, aiEnabled, meName, 
       } else if (mod && e.key.toLowerCase() === "d") {
         e.preventDefault();
         void duplicateNodes(useCanvasStore.getState().nodes.filter((n) => n.selected).map((n) => n.id));
-      } else if (!mod && !e.altKey && spawnKeyType(e.key) && useCanvasStore.getState().nodes.some((n) => n.selected)) {
+      } else if (!mod && !e.altKey && spawnKeyType(e.key) && !(e.target as HTMLElement | null)?.closest?.(".nokey") && useCanvasStore.getState().nodes.some((n) => n.selected)) {
         // Arm directional spawn: hold a type key (Tab/C/L/S/V), then press an arrow to drop a CONNECTED
         // node of that type in that direction from the selected node (keyboard twin of the hover
         // connect-arrows). Requires NO Ctrl/Cmd/Alt (so Ctrl+C/V/S/L are untouched) and a selected node
-        // (so plain Tab/letters pass through otherwise).
+        // (so plain Tab/letters pass through otherwise), and not from a "nokey" spreadsheet cell, where
+        // typing a letter starts editing it.
         e.preventDefault();
         heldSpawnType.current = spawnKeyType(e.key)!;
       } else if (heldSpawnType.current && DIR_FOR_ARROW[e.key]) {
