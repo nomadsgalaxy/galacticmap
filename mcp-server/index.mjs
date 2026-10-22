@@ -16,10 +16,12 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 
 const BASE = (process.env.GALACTICBOARD_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 const TOKEN = process.env.GALACTICBOARD_TOKEN;
+const MAX_IMAGE = 10 * 1024 * 1024; // the server's upload limit
 
 if (!TOKEN) {
   process.stderr.write("[galacticboard-mcp] GALACTICBOARD_TOKEN is required (mint one at /settings/tokens)\n");
@@ -181,6 +183,63 @@ server.registerTool(
       return fail(e);
     }
   },
+);
+
+server.registerTool(
+  "add_image",
+  {
+    title: "Add image",
+    description:
+      "Put a picture on a board: uploads a local image file or an http(s) image URL (PNG, JPEG, GIF or WebP, up to 10 MB) and adds an image node. Placement works like apply_changes: place.near / place.in a group / parent, or exact x/y; leave them all out and it goes below the board. Write a short caption in alt so the outline can describe it.",
+    inputSchema: {
+      boardId: z.string(),
+      source: z.string().describe("Absolute path to a local image file, or an http(s) URL"),
+      alt: z.string().max(500).optional().describe("Caption: what's in the picture"),
+      place: z.object({ near: z.string().optional(), in: z.string().optional(), dir: z.enum(["right", "left", "above", "below"]).optional() }).optional(),
+      parent: z.string().optional().describe("Make it a mind-map child of this node"),
+      group: z.string().optional().describe("Add it to this group"),
+      x: z.number().optional(),
+      y: z.number().optional(),
+      width: z.number().positive().optional(),
+      height: z.number().positive().optional(),
+    },
+  },
+  tool(async ({ boardId, source, alt, ...where }) => {
+    let bytes;
+    if (/^https?:\/\//i.test(source)) {
+      // Stop early on huge or slow downloads rather than pulling them all in and letting the server refuse.
+      const res = await fetch(source, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) throw new Error(`Couldn't download ${source}: HTTP ${res.status}`);
+      if (Number(res.headers.get("content-length")) > MAX_IMAGE) throw new Error(`${source} is over 10 MB`);
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of res.body) {
+        size += chunk.length;
+        if (size > MAX_IMAGE) throw new Error(`${source} is over 10 MB`);
+        chunks.push(chunk);
+      }
+      bytes = Buffer.concat(chunks);
+    } else {
+      if ((await stat(source)).size > MAX_IMAGE) throw new Error(`${source} is over 10 MB`);
+      bytes = await readFile(source);
+    }
+    const up = await fetch(`${BASE}/api/v1/boards/${boardId}/assets`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/octet-stream" },
+      body: bytes,
+    });
+    const asset = await up.json().catch(() => ({}));
+    if (!up.ok) throw new Error(`upload -> ${up.status}: ${asset.message || asset.error || up.statusText}`);
+    // Keep the picture's shape: fit its long edge in the default 220px frame unless a size was given.
+    const size = where.width && where.height ? {} : asset.width && asset.height
+      ? (asset.width >= asset.height ? { width: 220, height: Math.max(40, Math.round((220 * asset.height) / asset.width)) } : { width: Math.max(40, Math.round((220 * asset.width) / asset.height)), height: 220 })
+      : {};
+    const res = await api(`/boards/${boardId}/changes`, {
+      method: "POST",
+      body: { ops: [{ op: "add_node", ref: "img", type: "image", data: { assetId: asset.assetId, ...(alt ? { alt } : {}) }, ...size, ...where }] },
+    });
+    return { nodeId: res.refs?.img, assetId: asset.assetId, width: asset.width, height: asset.height };
+  }),
 );
 
 server.registerTool(
