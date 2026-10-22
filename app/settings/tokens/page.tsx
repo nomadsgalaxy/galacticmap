@@ -32,8 +32,9 @@ async function Loader() {
 async function QuickStart() {
   // Show this instance's own address, so hosted and self-hosted users both get a URL that works.
   const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const host = h.get("x-forwarded-host")?.split(",")[0] ?? h.get("host") ?? "localhost:3000";
+  // Next itself only serves http, so no forwarded proto means nothing terminated TLS in front of it.
+  const proto = h.get("x-forwarded-proto")?.split(",")[0] ?? "http";
   const origin = `${proto}://${host}`;
   return (
     <section className="mt-10 rounded-panel border border-outline-variant bg-surface-container p-4">
