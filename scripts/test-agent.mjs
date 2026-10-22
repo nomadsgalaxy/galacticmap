@@ -100,6 +100,9 @@ ok("snapshot embeds image thumbnails", snap.svg.includes('href="data:image/jpeg;
 const risky = snapshotSvg({ ...board, nodes: [{ id: "x", type: "text", parentId: null, x: 0, y: 0, width: null, height: null, data: { text: 'a <script> & "b"' } }] });
 ok("snapshot escapes text", !risky.svg.includes("<script") && risky.svg.includes("&#60;script &#38; &#34;b&#34;"));
 ok("snapshot draws groups and swatches", snap.svg.includes("#1d4ed8"));
+const t0 = Date.now();
+const huge = snapshotSvg({ ...board, groups: [], edges: [], nodes: [{ id: "s", type: "spreadsheet", parentId: null, x: 0, y: 0, width: 400, height: 300, data: { rows: 1e8, cols: 1e6, cells: { A1: "x" } } }] });
+ok("snapshot clamps a huge sheet to the editor's 50×26", Date.now() - t0 < 2000 && (huge.svg.match(/<line /g) ?? []).length === 50 + 26);
 const focused = snapshotSvg(board, { region: { x: -50, y: -50, w: 300, h: 200 } });
 ok("snapshot region crops the legend", focused.legend.length > 0 && focused.legend.length < board.nodes.length);
 

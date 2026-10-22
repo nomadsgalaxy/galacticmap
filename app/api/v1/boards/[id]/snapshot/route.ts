@@ -11,6 +11,6 @@ export function GET(req: Request, { params }: { params: Promise<{ id: string }> 
     const q = new URL(req.url).searchParams;
     const width = Number(q.get("width"));
     const snap = await boardSnapshot(principal, id, { focus: q.get("focus") ?? undefined, width: Number.isFinite(width) && width > 0 ? width : undefined });
-    return json({ boardId: id, title: snap.title, region: snap.region, legend: snap.legend, mimeType: "image/png", data: snap.png.toString("base64") });
+    return json({ boardId: id, title: snap.title, region: snap.region, legend: snap.legend, notes: snap.notes, mimeType: "image/png", data: snap.png.toString("base64") });
   });
 }

@@ -94,7 +94,9 @@ function drawNode(n: SnapshotNode, r: Rect, ctx: Ctx): string {
     }
     case "spreadsheet": {
       const cells = (d.cells ?? {}) as Record<string, string>;
-      const rows = Number(d.rows ?? 4), cols = Number(d.cols ?? 4);
+      // Clamp to the editor's limits (SpreadsheetData): this loops rows × cols, and node data comes from clients.
+      const lim = (v: unknown, max: number) => Math.min(max, Math.max(1, Math.floor(Number(v ?? 4)) || 4));
+      const rows = lim(d.rows, 50), cols = lim(d.cols, 26);
       const cw = (r.w - 30) / cols, rh = r.h / (rows + 1);
       const get = (ref: string) => cellForEval(cells[ref] ?? "");
       let s = card(r) + `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${rh}" fill="#f4f4f5"/>`;

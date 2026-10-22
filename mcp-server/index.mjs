@@ -78,7 +78,7 @@ const server = new McpServer(
     instructions: [
       "Galactic Map boards are hand-made moodboards and mind maps on an infinite canvas. Treat a board like someone's desk: read it before you touch it, and keep their arrangement.",
       "",
-      "Reading a board: describe_board gives every node's id, content and position, grouped the way the owner arranged it. view_board shows you the picture (numbered nodes, legend maps numbers to ids); use focus to zoom into a group or branch when the whole board is too small to read. view_image opens one image node. Look at the images before you describe, sort or add to a moodboard, because the alt text is often empty.",
+      "Reading a board: describe_board gives every node's id, content and position, grouped the way the owner arranged it. view_board shows you the picture (numbered nodes, legend maps numbers to ids); use focus to zoom into a group or branch when the whole board is too small to read. Use view_board first, and open view_image only for the images whose content matters, since captions are often empty.",
       "",
       "How boards are built:",
       "- Mind map: a node's parentId makes it a child; children sit to the right of their parent in a column. Add ideas as children of the topic they belong to (parent, with no x/y) instead of loose nodes.",
@@ -152,7 +152,7 @@ server.registerTool(
       return {
         content: [
           { type: "image", data: s.data, mimeType: s.mimeType },
-          { type: "text", text: [`${s.title}: showing x ${Math.round(r.x)}..${Math.round(r.x + r.w)}, y ${Math.round(r.y)}..${Math.round(r.y + r.h)}`, ...s.legend].join("\n") },
+          { type: "text", text: [`${s.title}: showing x ${Math.round(r.x)}..${Math.round(r.x + r.w)}, y ${Math.round(r.y)}..${Math.round(r.y + r.h)}`, ...(s.notes ?? []), ...s.legend].join("\n") },
         ],
       };
     } catch (e) {
@@ -165,7 +165,7 @@ server.registerTool(
   "view_image",
   {
     title: "View image",
-    description: "Open an image node and see the picture itself (scaled to max px on its long edge). If it has no caption (data.alt), consider writing a short one with apply_changes so the outline describes it next time.",
+    description: "Open an image node and see the picture itself (scaled to max px on its long edge), plus its caption if it has one.",
     inputSchema: {
       boardId: z.string().describe("Board id"),
       nodeId: z.string().describe("Image node id"),
@@ -176,7 +176,7 @@ server.registerTool(
     try {
       const img = await apiBytes(`/boards/${boardId}/nodes/${nodeId}/image${max ? `?max=${max}` : ""}`);
       const alt = img.alt ? decodeURIComponent(img.alt) : null;
-      return { content: [{ type: "image", data: img.data, mimeType: img.mimeType }, { type: "text", text: alt ? `caption: ${alt}` : "(no caption yet: if you can describe it, set data.alt with apply_changes)" }] };
+      return { content: [{ type: "image", data: img.data, mimeType: img.mimeType }, { type: "text", text: alt ? `caption: ${alt}` : "(no caption. If the user asked you to work on this board, you can add a short one as data.alt; otherwise mention what the picture shows in your reply.)" }] };
     } catch (e) {
       return fail(e);
     }
