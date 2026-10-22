@@ -9,7 +9,7 @@ Galactic Map by [NomadsGalaxy](https://www.nomadsgalaxy.com).
 ## Features
 
 - **Infinite canvas** with pan/zoom, rotation, drag-resize, alignment guides and a gentle grid.
-- **Node types** — rich-text (Markdown), images (cropped/zoomed, auto-optimized on upload), color swatches, link cards, spreadsheets with formulas, and variable trackers.
+- **Node types** — rich-text (Markdown), images (cropped/zoomed, auto-optimized on upload), color swatches, link cards, spreadsheets with formulas (Excel-style: type to edit, arrows to move, Delete clears a cell, right-click to insert or delete rows and columns), and variable trackers.
 - **Smart connectors** — original orthogonal router (clean L/Z/U routing that bends around nodes), line-jumps where trails cross, manual waypoints, and a directional comet that shows flow.
 - **Trackable variables** — write `$cost(30)` anywhere and reference it (`Sum($cost)`, `Avg($cost)`) in spreadsheets, trackers, or a HUD; spreadsheet cells can export their result as a variable too. Readable over the API.
 - **Grouping** into labelled, colored clouds; tags and tag filtering; branch focus and collapse.

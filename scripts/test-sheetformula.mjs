@@ -1,6 +1,6 @@
 // Self-check for the spreadsheet formula evaluator. Run: npx tsx scripts/test-sheetformula.mjs
 import { evaluateCell, evaluateCellDisplay, evaluateExpr, parseLiteral, parseRef, refName, colName, functionNames } from "../app/(editor)/boards/[id]/_components/nodes/sheetFormula.ts";
-import { shiftFormula, shiftCell, fillRange, fillCells } from "../app/(editor)/boards/[id]/_components/nodes/sheetFill.ts";
+import { shiftFormula, shiftCell, fillRange, fillCells, insertLines } from "../app/(editor)/boards/[id]/_components/nodes/sheetFill.ts";
 import { FUNCTION_DOCS, typingAt, callAt, suggestFunctions, suggestVariables, splitArgs, argIndex } from "../app/(editor)/boards/[id]/_components/nodes/sheetFunctions.ts";
 
 let pass = 0, fail = 0;
@@ -348,6 +348,24 @@ eq("fillCells keeps the source", filled.D2, "=C2-B2");
 const gf = (r) => filled[r] ?? "";
 eq("filled formula evaluates (overnight)", evaluateCellDisplay(filled.D3, gf), "4 hours");
 eq("fillCells empty source clears", "D3" in fillCells({ D3: "x" }, "D2", fillRange("D2", "D3")), false);
+
+// --- insert / delete rows and columns ---
+const grid = { A1: "1", A2: "2", A3: "3", B1: "=A1+A3", B3: "=SUM(A1:A3)", C1: "=$A$3*2", D1: "=SUM(A:B)" };
+const insRow = insertLines(grid, "row", 1, 1); // a new row 2
+eq("insert row moves cells down", [insRow.A2, insRow.A3, insRow.A4].join("|"), "|2|3");
+eq("insert row: refs follow their cells", [insRow.B1, insRow.B4, insRow.C1].join("|"), "=A1+A4|=SUM(A1:A4)|=$A$4*2");
+eq("insert row: whole columns stay", insRow.D1, "=SUM(A:B)");
+const insCol = insertLines(grid, "col", 0, 1); // a new column A
+eq("insert col moves cells right", [insCol.A1 ?? "", insCol.B1, insCol.C1].join("|"), "|1|=B1+B3");
+eq("insert col: ranges and anchors follow", [insCol.C3, insCol.D1, insCol.E1].join("|"), "=SUM(B1:B3)|=$B$3*2|=SUM(B:C)");
+const delRow = insertLines(grid, "row", 1, -1); // delete row 2
+eq("delete row moves cells up", [delRow.A2, delRow.B2].join("|"), "3|=SUM(A1:A2)");
+eq("delete row: ref to it is #REF!", insertLines({ A1: "=A2*2", A2: "5" }, "row", 1, -1).A1, "=#REF!*2");
+const delCol = insertLines(grid, "col", 0, -1); // delete column A
+eq("delete col drops its cells", "A2" in delCol, false);
+eq("delete col: refs into it are #REF!", [delCol.A1, delCol.B1].join("|"), "=#REF!+#REF!|=#REF!*2");
+eq("insert col: named output keeps its name", insertLines({ B1: "$Pay = C1*2", C1: "4" }, "col", 0, 1).C1, "$Pay = D1*2");
+eq("insert/delete round trip", JSON.stringify(insertLines(insRow, "row", 1, -1)), JSON.stringify(grid));
 
 console.log(`\nsheetFormula — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

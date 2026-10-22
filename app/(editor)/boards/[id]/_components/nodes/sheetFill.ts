@@ -12,34 +12,63 @@ const TOKEN =
 
 const colIndex = (letters: string) => parseRef(letters + "1")!.col;
 
-export function shiftFormula(formula: string, dRow: number, dCol: number): string {
-  // Leave "string literals" untouched: shift only the parts between them.
+// Where a ref points after an edit: the new 0-based index, or null when its row/column is gone (#REF!).
+type MapIndex = (index: number, abs: boolean) => number | null;
+
+// Rewrite every cell ref and whole-column range in a formula through `mapRow`/`mapCol`.
+function mapRefs(formula: string, mapRow: MapIndex, mapCol: MapIndex): string {
+  // Leave "string literals" untouched: rewrite only the parts between them.
   return formula.split(/("(?:[^"]|"")*")/).map((part, i) => (i % 2 ? part : part.replace(TOKEN, (m, ...g: (string | undefined)[]) => {
     const [cAbsA, colA, rAbsA, rowA, cAbsB, colB, rAbsB, rowB, rgAbs1, rgCol1, rgAbs2, rgCol2] = g;
     const letters = colA ?? colB, digits = rowA ?? rowB;
     if (letters && digits) {
       const cAbs = (cAbsA ?? cAbsB) === "$", rAbs = (rAbsA ?? rAbsB) === "$";
-      const col = colIndex(letters) + (cAbs ? 0 : dCol), row = Number(digits) - 1 + (rAbs ? 0 : dRow);
-      if (col < 0 || row < 0) return "#REF!";
+      const col = mapCol(colIndex(letters), cAbs), row = mapRow(Number(digits) - 1, rAbs);
+      if (col == null || row == null || col < 0 || row < 0) return "#REF!";
       return `${cAbs ? "$" : ""}${colName(col)}${rAbs ? "$" : ""}${row + 1}`;
     }
     if (rgCol1 && rgCol2) {
-      const shift = (abs: string | undefined, letters: string) => {
-        const col = colIndex(letters) + (abs === "$" ? 0 : dCol);
-        return col < 0 ? null : `${abs ?? ""}${colName(col)}`;
+      const one = (abs: string | undefined, letters: string) => {
+        const col = mapCol(colIndex(letters), abs === "$");
+        return col == null || col < 0 ? null : `${abs ?? ""}${colName(col)}`;
       };
-      const a = shift(rgAbs1, rgCol1), b = shift(rgAbs2, rgCol2);
+      const a = one(rgAbs1, rgCol1), b = one(rgAbs2, rgCol2);
       return a && b ? `${a}:${b}` : "#REF!";
     }
     return m; // a $variable or a word: unchanged
   }))).join("");
 }
 
+export const shiftFormula = (formula: string, dRow: number, dCol: number) =>
+  mapRefs(formula, (r, abs) => (abs ? r : r + dRow), (c, abs) => (abs ? c : c + dCol));
+
+// Apply `f` to the formula part of a cell ("=…" or "$Name = …"); plain values pass through.
+function mapCellFormula(raw: string, f: (formula: string) => string): string {
+  if (raw.trimStart().startsWith("=")) return raw.replace(/^(\s*=)([\s\S]*)$/, (_m, p: string, e: string) => p + f(e));
+  if (cellOutput(raw)) return raw.replace(/^(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*=\s*)([\s\S]*)$/, (_m, p: string, e: string) => p + f(e));
+  return raw;
+}
+
 // What a cell's raw text becomes when copied dRow rows down / dCol columns right.
-export function shiftCell(raw: string, dRow: number, dCol: number): string {
-  if (raw.trimStart().startsWith("=")) return raw.replace(/^(\s*=)([\s\S]*)$/, (_m, p: string, e: string) => p + shiftFormula(e, dRow, dCol));
-  if (cellOutput(raw)) return raw.replace(/^(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*=\s*)([\s\S]*)$/, (_m, p: string, e: string) => p + shiftFormula(e, dRow, dCol));
-  return raw; // plain values copy as they are
+export const shiftCell = (raw: string, dRow: number, dCol: number) => mapCellFormula(raw, (e) => shiftFormula(e, dRow, dCol));
+
+// Insert (count > 0) or delete (count < 0) whole rows or columns at `at` (0-based), like Excel: cells
+// below/right of it move, and every formula's refs follow their cells, $-anchored or not. A ref into a
+// deleted row/column becomes #REF!.
+// shortcut: a range whose end cell is deleted turns into #REF! (Excel shrinks it); upgrade if people hit it.
+export function insertLines(cells: Record<string, string>, axis: "row" | "col", at: number, count: number): Record<string, string> {
+  const move: MapIndex = (i) => (i < at ? i : count < 0 && i < at - count ? null : i + count);
+  const keep: MapIndex = (i) => i;
+  const [mapRow, mapCol] = axis === "row" ? [move, keep] : [keep, move];
+  const next: Record<string, string> = {};
+  for (const [ref, raw] of Object.entries(cells)) {
+    const p = parseRef(ref);
+    if (!p) continue;
+    const row = mapRow(p.row, false), col = mapCol(p.col, false);
+    if (row == null || col == null) continue; // the cell was in a deleted line
+    next[refName(col, row)] = mapCellFormula(raw, (e) => mapRefs(e, mapRow, mapCol));
+  }
+  return next;
 }
 
 export type CellRange = { r0: number; c0: number; r1: number; c1: number };
